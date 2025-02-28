@@ -132,77 +132,6 @@ def dump(event,mom_threshold=0):
     
     print(tabulate(event_table,headers=headers,floatfmt=".3f",tablefmt='simple_outline'))
 
-def print_result_new(tag):
-    global h, Event_weight, SBT_Event_weight, digihitrate, sst_hitrate
-
-    # Save histograms
-    ut.writeHists(h, directory + tag + '.root')
-
-    # Open readme file
-    with open(directory + tag + '_readme.txt', 'w') as readme:
-        
-        # Muon BG Statistics
-        muon_stats = [
-            ["Muon BG Statistics", len(Event_weight), sum(Event_weight.values())],
-            ["Muon BG Statistics with SBT activity", len(SBT_Event_weight), sum(SBT_Event_weight.values())]
-        ]
-        print("\n\n" + tabulate(muon_stats, headers=["Description", "Generated", "Scaled to one spill"], tablefmt="pretty"))
-        readme.write(tabulate(muon_stats, headers=["Description", "Generated", "Scaled to one spill"], tablefmt="pretty") + "\n\n")
-
-        # Digihit Multiplicity Section
-        print("\n  =========================== SBT ===========================\n")
-        readme.write("\n  =========================== SBT ===========================\n\n")
-
-        digihit_table = []
-        for threshold in threshold_list:
-            total_digihit = round(sum(digihitrate[f'{threshold}MeV'].values()) * 1e-6, 4)
-            max_cell, max_digihit = max(digihitrate[f'{threshold}MeV'].items(), key=lambda k: k[1])
-            digihit_table.append([f"{threshold} MeV", f"{total_digihit} MHz", f"{max_digihit:.2f} Hz", f"(Detector ID: {max_cell})"])
-
-        print(tabulate(digihit_table, headers=["Threshold", "Total Digihit-Rate", "Max Digihit-Rate", "Max Detector"], tablefmt="pretty"))
-        readme.write(tabulate(digihit_table, headers=["Threshold", "Total Digihit-Rate", "Max Digihit-Rate", "Max Detector"], tablefmt="pretty") + "\n\n")
-
-        # Tracking Station Hit Rates
-        print("\n  ==================== TRACKING STATIONS ====================\n")
-        readme.write("\n  ==================== TRACKING STATIONS ====================\n\n")
-
-        TOTALHITRATE = 0
-        muonhitrate = {}
-
-        for station in range(1, 5):
-            muonhitrate[station] = 0
-            print(f"\n  PLANE {station}\n  ---------------------")
-            readme.write(f"\n  PLANE {station}\n  ---------------------\n")
-
-            if station not in sst_hitrate:
-                continue
-
-            station_table = []
-            for particle_name, hitrate in sst_hitrate[station].items():
-                if particle_name.startswith("mu"):
-                    muonhitrate[station] += float(hitrate)
-                station_table.append([particle_name, f"{hitrate:.5f} Hz"])
-
-            print(tabulate(station_table, headers=["Particle", "Hitrate"], tablefmt="pretty"))
-            readme.write(tabulate(station_table, headers=["Particle", "Hitrate"], tablefmt="pretty") + "\n\n")
-
-            station_hitrate = sum(sst_hitrate[station].values())
-            print(f"  Total hitrate in station {station}: {station_hitrate:.5f} Hz\n")
-            readme.write(f"  Total hitrate in station {station}: {station_hitrate:.5f} Hz\n\n")
-            TOTALHITRATE += station_hitrate
-
-        # Summary of Total Hit Rates
-        print("\n  =========================================================\n")
-        total_summary = [
-            ["Total hitrate in all trackers", f"{TOTALHITRATE:.5f} Hz"],
-            ["Total muon hitrate in all trackers", f"{sum(muonhitrate.values()):.5f} Hz"]
-        ]
-        print(tabulate(total_summary, tablefmt="pretty"))
-        readme.write("\n" + tabulate(total_summary, tablefmt="pretty") + "\n")
-        print("\n  =========================================================\n")
-        readme.write("\n  =========================================================\n")
-
-
 def print_result(tag):
 	
 	global h,Event_weight,SBT_Event_weight,digihitrate,sst_hitrate
@@ -212,7 +141,6 @@ def print_result(tag):
 				
 		print("\n\n\n")
 		
-
 		
 		print(" {:46} Generated: {:10.5}\t Scaled to one spill: {:10.5}".format('Muon BG Statistics',float(len(Event_weight)),float(sum(Event_weight.values()))))
 		print(" {:46} Generated: {:10.5}\t Scaled to one spill: {:10.5}".format('Muon BG Statistics with SBT activity',float(len(SBT_Event_weight)),float(sum(SBT_Event_weight.values()))))
