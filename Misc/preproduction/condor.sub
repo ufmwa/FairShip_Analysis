@@ -1,0 +1,21 @@
+executable          	= condor.sh
+transfer_output_files   = preproduction_stat.txt
+notify_user				= anupama.reghunath@physik.hu-berlin.de
+notification 			= Always
+
+##############################################################################################################
+error 					= /afs/cern.ch/work/a/anupamar/HTCondor_files/error/preprod.err
+log 					= /afs/cern.ch/work/a/anupamar/HTCondor_files/log/preprod.log
+output					= /afs/cern.ch/work/a/anupamar/HTCondor_files/output/preprod.out
+##############################################################################################################
+#request_memory 		= 50 GB	
+#request_disk			= 4 GB
+on_exit_remove   		= (ExitBySignal == False) && (ExitCode == 0)
+max_retries      		= 3
+requirements     		= Machine =!= LastRemoteHost 
+
+
+##############################################################################################################
++JobFlavour="testmatch"
+##############################################################################################################
+queue
