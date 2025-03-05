@@ -41,15 +41,15 @@ ut.bookHist(h, 'ubtpoint_hitXY','UBT	; x (cm);y (cm);'			,200,-200,200,200,-200,
 ut.bookHist(h, 'ubtpoint_momentum','UBT	; hit momentum (GeV/c); '		,1000,0,10)
 
 ut.bookHist(h, 'strawtube_detID',   'SST			 	; detectorID; '		,500,0.5e7,5e7)
-ut.bookHist(h, 'strawtube_momentum','SST			 	; momentum (GeV/c); ',10000,0,2)
-ut.bookHist(h, 'strawtube_momentum_muons','SST (muons) ; momentum (GeV/c); ',10000,0,2)
+ut.bookHist(h, 'strawtube_momentum','SST			 	; momentum (GeV/c); ',10000,0,400)
+ut.bookHist(h, 'strawtube_momentum_muons','SST (muons) ; momentum (GeV/c); ',10000,0,400)
 
 for i in range(1,5):
 	ut.bookHist(h, f'strawtube_station{i}_hitXY'		,f'SST station{i} 			; x (cm) ;y (cm);	'		,100,-300,300,100,-400,400)
 	ut.bookHist(h, f'strawtube_station{i}_muons_hitXY'	,f'SST station{i} (muons)	; x (cm) ;y (cm);	'		,100,-300,300,100,-400,400)
 
 ut.bookHist(h, 'strawtubepoint_pdg'				,'SST		; pdg  		;'				,20,-0.5,20.5)
-ut.bookHist(h, 'strawtubepoint_pdg_vs_mom'		,'SST		; pdg 		; momentum (GeV/c)'	,20,-0.5,20.5,100000,1e-9,1)
+ut.bookHist(h, 'strawtubepoint_pdg_vs_mom'		,'SST		; pdg 		; momentum (GeV/c)'	,20,-0.5,20.5,100000,1e-9,400)
 
 ut.bookHist(h, 'vetopoint_topology_phi'					,'SBT (vetoPoint info) hitrate ; z(cm) ; #phi 	'			,100,-3000.,3000.,36,0,360)
 
@@ -59,7 +59,7 @@ ut.bookHist(h, 'vetopoint_energydeposition'				,'SBT (vetoPoint info)					; Ener
 ut.bookHist(h, 'vetopoint_energydeposition_shapewise'	,'SBT (vetoPoint info)					; Shape ID; Energy deposition per particle hit(GeV)	;'	,6,0.5,6.5,1000,0,1)#2D plot
 ut.bookHist(h, 'vetopoint_pdg'							,'SBT (vetoPoint info)					; pdg  		; 	'				,20,-0.5,20.5)
 ut.bookHist(h, 'vetopoint_pdg_vs_energydeposition'		,'SBT (vetoPoint info)					; pdg 		; Energy deposition (GeV) '		,20,-0.5,20.5,1000,0,1)
-ut.bookHist(h, 'vetopoint_min_energydeposition_muons'			,'SBT (vetoPoint info) min(energy deposition) of muons 	; z(cm) ; #phi ;energy deposition(GeV)'	,100,-3000.,3000.,36,0,360)
+ut.bookHist(h, 'vetopoint_min_energydeposition_muons'			,'SBT (vetoPoint info) min(energy deposition) of muons 	; z(cm) ; #phi ;energy deposition(MeV)'	,100,-3000.,3000.,36,0,360)
 
 h['vetopoint_min_energydeposition_muons'].GetZaxis().SetTitleOffset(-0.5);  
 h['vetopoint_min_energydeposition_muons'].GetZaxis().SetTitleSize(0.03);   
@@ -78,7 +78,7 @@ for threshold in threshold_list:
 	ut.bookHist(h, f'{threshold}_n_maxenergydeposition'			,f'SBT (Digitised hits @ {threshold}MeV threshold )			; Number of cells with max(Energy deposition) '	,100,0,100)
 	ut.bookHist(h, f'{threshold}_cell_maxenergydeposition'		,f'SBT (Digitised hits @ {threshold}MeV threshold )			; Max(E_deposition) in a cell (GeV) 	;Number of cells with max(E_deposition) '	,1000,0.,1,50,0,50)
 	
-	ut.bookHist(h, f'{threshold}_digihit_max_edepval_topology_phi'		,f'SBT (Digitised hits @ {threshold}MeV threshold ) min( max(energy deposition) per event ) 	; z(cm) ; #phi ;energy deposition(GeV)',100,-3000.,3000.,36,0,360)
+	ut.bookHist(h, f'{threshold}_digihit_max_edepval_topology_phi'		,f'SBT (Digitised hits @ {threshold}MeV threshold ) min( max(energy deposition) per event ) 	; z(cm) ; #phi ;energy deposition(MeV)',100,-3000.,3000.,36,0,360)
 	
 	h[f'{threshold}_digihit_max_edepval_topology_phi'].GetZaxis().SetTitleOffset(-0.5);  
 	h[f'{threshold}_digihit_max_edepval_topology_phi'].GetZaxis().SetTitleSize(0.03);   
