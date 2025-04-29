@@ -17,7 +17,7 @@ parser.add_argument(
     dest="output_file",
     help="output file name",
     type=str,
-    default="filtered_events_withcandidates.root",       # ← here’s your one-liner default
+    default="filtered_events_withcandidates.root",      
 )
 options = parser.parse_args()
 
