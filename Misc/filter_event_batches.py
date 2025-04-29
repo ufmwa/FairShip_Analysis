@@ -114,7 +114,7 @@ def inspect_files(path):
         
         if not output_dir.startswith("job_"): continue
 
-        output_file = os.path.join(output_dir, options.output_file)
+        output_file = os.path.join(path,output_dir, options.output_file)
         f = ROOT.TFile(output_file, "read")
         newtree = f.cbmsim
         n_events=newtree.GetEntries()
