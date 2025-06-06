@@ -10,19 +10,12 @@ import csv
 pdg = ROOT.TDatabasePDG.Instance()
 
 
-parser = ArgumentParser()
-
-parser.add_argument("-sg", "--signalpath", dest="signal_path", help="Path to Signal Files", required=False,type=str, default= \
-    '/eos/user/m/mfership/public/SHiP/MC/HNL_e/HNL_1.000e+00_6.000e-03_1.000e+00_0.000e+00_0.000e+00_data.root')
-
-options = parser.parse_args()
-
 PION0_MASS = 134.9768*0.001             # Mass of the neutral pion.
 RHO_MASS_NOMINAL = 775.45*0.001         # Mass of the rho meson.
 
-def plot_distributions(h1,h2):
+def plot_distributions(h1,h2,filename="plots_HNLMass_EventCalc.root"):
 
-    output_file = ROOT.TFile("plots_HNLMass_EventCalc.root", "RECREATE")
+    output_file = ROOT.TFile(filename, "RECREATE")
     
     for h in [h1,h2]:
         for akey in h:
@@ -133,7 +126,7 @@ def plot_distributions(h1,h2):
             canvas.Write() 
 
     output_file.Close()
-    print("All plots have been saved in 'plots_HNLMass_EventCalc.root'.")
+    print(f"All plots have been saved in {filename}.")
 
 def calculate_min_rho_mass(pion,lepton,pion0):
     """
@@ -567,7 +560,21 @@ def process_hnl_events_with_rho_constraint(signal_file,nametag):
     return h
 
 
-extract_decay_event_ids_to_csv(options.signal_path)
-h_lrho = process_hnl_events_with_rho_constraint(options.signal_path,'e+rho')
-h_epi  = process_hnl_events_with_rho_constraint(options.signal_path,'e+pi')
-plot_distributions(h_lrho,h_epi)
+def main():
+
+    parser = ArgumentParser()
+
+    parser.add_argument("-sg", "--signalpath", dest="signal_path", help="Path to Signal Files", required=False,type=str, default= \
+        '/eos/user/m/mfership/public/SHiP/MC/HNL_e/HNL_1.000e+00_6.000e-03_1.000e+00_0.000e+00_0.000e+00_data.root')
+
+    options = parser.parse_args()
+
+    extract_decay_event_ids_to_csv(options.signal_path)
+
+    h_lrho = process_hnl_events_with_rho_constraint(options.signal_path,'e+rho')
+    h_epi  = process_hnl_events_with_rho_constraint(options.signal_path,'e+pi')
+
+    plot_distributions(h_lrho,h_epi)
+
+if __name__ == "__main__":
+    main()
