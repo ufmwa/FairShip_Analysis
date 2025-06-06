@@ -1,11 +1,9 @@
 """
 Calculate the invariant mass for HNL->rho lepton channel using a rho constraint using files generated using Fairship.
 
-USAGE: python HNLinvmass.py --signalpath <locationtosignalfile>
+USAGE: python HNLinvmass_Fairship.py
 
 """
-
-from argparse import ArgumentParser
 import HNLinvmass_EventCalc as functions
 import ROOT
 from tabulate import tabulate
@@ -15,10 +13,6 @@ pythia8_conf.addHNLtoROOT()
 import shipunit as u
 import os
 
-parser = ArgumentParser()
-
-parser.add_argument("-sg", "--signalpath", dest="signal_path", help="Path to Signal Files", required=False,type=str, default= '/afs/cern.ch/user/a/anupamar/Analysis/HNLMass/10000_rhoe')#HNLrhoe2GeV/'#
-options = parser.parse_args()
 
 def dump(event,mom_threshold=0):
 
