@@ -3,7 +3,7 @@
 
 #-----------------------------------------------------------------------------------------------------------
 import glob
-import pathlib
+from pathlib import Path
 import pandas as pd
 from tabulate import tabulate
 from argparse import ArgumentParser
@@ -29,9 +29,9 @@ if options.vesselCase:  keyword="vesselCase"
 if options.heliumCase:  keyword="heliumCase"
 
 if options.muonDIS:
-    path='./'
+    pathlist=['/eos/experiment/ship/user/anupamar/BackgroundStudies/muonDIS/SBT','/eos/experiment/ship/user/anupamar/BackgroundStudies/muonDIS/Tr']
 if options.neuDIS:
-    path='./'
+    pathlist=['/eos/experiment/ship/user/anupamar/BackgroundStudies/neuDIS/']
 
 pre_tags = [
     "n_particles", "fiducial", "dist2innerwall", "dist2vesselentrance",
@@ -82,11 +82,16 @@ table_specs = [
 ]
 
 
-csv_files = glob.glob(f"selection_summary_{keyword}*.csv")
+csv_files = [
+    str(csv_path)
+    for base in pathlist
+    for csv_path in Path(base).glob(
+        f"job_*/selection_summary_{keyword}*.csv")   
+]
+
 
 df = pd.concat((pd.read_csv(f) for f in csv_files), ignore_index=True)
 
-# sum over all jobs
 agg = (df.groupby("tag")[["nCandidates", "nEvents15y"]]
          .sum()
          .sort_index())
