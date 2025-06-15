@@ -138,7 +138,7 @@ def process_hnl_fairshipevents_with_rho_constraint(path,nametag):
                                             ROOT.TMath.ATan2(truth_pi0track.GetPy(), truth_pi0track.GetPx()),
                                             truth_pi0track.GetMass()
                                             )
-                    truth_pion0_rotated=rotate_momentum_to_hnl_frame(decay_vertex, production_vertex, truth_pion0_vec)
+                    truth_pion0_rotated=functions.rotate_momentum_to_hnl_frame(decay_vertex, production_vertex, truth_pion0_vec)
                     h[f"{nametag}_truth_pion0_pt"].Fill(truth_pion0_rotated.Pt())
                     h[f"{nametag}_truth_pion0_pp"].Fill(truth_pion0_rotated.Pz())
 
