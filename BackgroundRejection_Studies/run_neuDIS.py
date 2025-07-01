@@ -2,12 +2,14 @@
 """Wrapper Script to run selection checks on neuDIS samples."""
 
 #-----------------------------------------------------------------------------------------------------------
-
+import numpy as np
+import ROOT
+import shipunit as u
 from selectioncheck import main
 import sys, argparse
 
 
-def calcweight_neuDIS(event,SHiP_running=15,N_gen=100000*98): #Each file has 100k events each change N_gen according to files(1) used for analysis, and 98 successful jobs
+def calcweight_neuDIS(event,SHiP_running=15,N_gen=6000*19969):#6k events per job, 19.993k jobs #,N_gen=100000*98): #Each file has 100k events each change N_gen according to files(1) used for analysis, and 98 successful jobs
     
     w_DIS    =  event.MCTrack[0].GetWeight()
     nPOTinteraction     =(2.e+20)*(SHiP_running/5)
@@ -17,7 +19,7 @@ def calcweight_neuDIS(event,SHiP_running=15,N_gen=100000*98): #Each file has 100
     
     nNu_perspill=4.51e+11       #number of neutrinos in a spill.
     
-    N_nu=nNu_perspill*n_Spill   #Expected number of neutrinos in 15 years
+    #N_nu=nNu_perspill*n_Spill   #Expected number of neutrinos in 15 years
 
     w_nu=nNu_perspill/N_gen     #weight of each neutrino considered scaled to a spill such that sum(w_nu)=(nNu_perspill/N_gen)*N_gen= nNu_perspill = number of neutrinos in a spill.
     
@@ -27,12 +29,87 @@ def calcweight_neuDIS(event,SHiP_running=15,N_gen=100000*98): #Each file has 100
     
     return w_DIS*sigma_DIS*w_nu*n_Spill  #(rho_L*N_nu*N_A*neu_crosssection*E_avg)/N_gen     #returns the number of the DIS interaction events of that type in SHiP running(default=5) years.   #DIS_multiplicity=1 here
 
+def TDC_correction(event,candidate):#resolve time bug in neuDIS production. to be removed for new productions post 2024
+    #print("TDC_correction called")
+
+    def define_t_vtx():
+
+        t0=event.ShipEventHeader.GetEventTime()
+
+        candidatePos = ROOT.TLorentzVector()
+        candidate.ProductionVertex(candidatePos)
+
+        d1, d2 = candidate.GetDaughter(0), candidate.GetDaughter(1)
+        d1_mc, d2_mc = event.fitTrack2MC[d1], event.fitTrack2MC[d2]
+
+        time_vtx_from_strawhits=[]
+
+        for hit in event.strawtubesPoint:
+
+            if not (int( str( hit.GetDetectorID() )[:1]) ==1 or int( str( hit.GetDetectorID() )[:1]) ==2) : continue #if hit.GetZ() > ( ShipGeo.TrackStation2.z + 0.5*(ShipGeo.TrackStation3.z - ShipGeo.TrackStation2.z) ): continue #starwhits only from T1 and T2 before the SHiP magnet .
+
+            if not (hit.GetTrackID()==d1_mc or hit.GetTrackID()==d2_mc) : continue
+
+            t_straw    = event.MCTrack[0].GetStartT()/1e4+(hit.GetTime()-event.MCTrack[0].GetStartT())
+            
+            d_strawhit  = [hit.GetX(),hit.GetY(),hit.GetZ()]
+
+            dist     = np.sqrt( (candidatePos.X()-hit.GetX() )**2+( candidatePos.Y() -hit.GetY())**2+ ( candidatePos.Z()-hit.GetZ() )**2) #distance to the vertex #in cm
+
+            Mom          = event.MCTrack[hit.GetTrackID()].GetP()/u.GeV
+            mass         = event.MCTrack[hit.GetTrackID()].GetMass()
+            v            = u.c_light*Mom/np.sqrt(Mom**2+(mass)**2)
+
+            t_vertex   = t_straw-(dist/v)
+
+            time_vtx_from_strawhits.append(t_vertex)
+
+        t_vtx=np.average(time_vtx_from_strawhits)+t0
+
+        return t_vtx
+
+    ElossPerDetId   = {}
+    tOfFlight       = {}
+    
+    for aMCPoint in event.vetoPoint:
+
+        detID=aMCPoint.GetDetectorID()
+        Eloss=aMCPoint.GetEnergyLoss()
+
+        if detID not in ElossPerDetId:
+            
+            ElossPerDetId[detID]=0
+            tOfFlight[detID]=[]
+
+        ElossPerDetId[detID] += Eloss
+
+        hittime = event.MCTrack[0].GetStartT()/1e4+(aMCPoint.GetTime()-event.MCTrack[0].GetStartT()) 
+
+        tOfFlight[detID].append(hittime)
+
+    digiSBT=[]
+    
+    t0=event.ShipEventHeader.GetEventTime()
+    
+    for detID in ElossPerDetId:
+
+        aHit = ROOT.vetoHit(detID,ElossPerDetId[detID])
+        aHit.SetTDC(min( tOfFlight[detID] ) + t0 )    
+        if ElossPerDetId[detID]<0.045:    aHit.setInvalid()  
+        digiSBT.append(aHit)
+        #index=index+1
+
+    candidate_time = define_t_vtx()
+    
+    return digiSBT,candidate_time
+
 
 p = argparse.ArgumentParser(description=__doc__)
-p.add_argument("-p", "--path", default="/eos/experiment/ship/user/Iaroslava/train_sample_N2024_big/")
+#p.add_argument("-p", "--path", default="/eos/experiment/ship/user/Iaroslava/train_sample_N2024_big/")
+p.add_argument("-p", "--path", default="/eos/experiment/ship/simulation/bkg/NeutrinoDIS_2024helium/10864335/")
 
 known, rest = p.parse_known_args(sys.argv[1:])
 
 # Pass the parsed path plus any *remaining* CLI args to the core.
 sys.argv = [sys.argv[0], *rest, "-p", known.path]
-main(weight_function=calcweight_neuDIS)
+main(IP_CUT=10,weight_function=calcweight_neuDIS) #no need to pass TDC correction anymore!

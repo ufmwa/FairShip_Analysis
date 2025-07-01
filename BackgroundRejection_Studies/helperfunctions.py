@@ -48,6 +48,10 @@ class AnalysisContext:
         self.fM = ROOT.genfit.FieldManager.getInstance()
         self.fM.init(bfield)
 
+        self.fitter = ROOT.genfit.DAF()   # good
+        self.fitter.setMaxIterations(50)  # good, default is 10
+        
+
 class selection_check:
     """Class to perform various selection checks on the candidate."""
     """
@@ -282,47 +286,43 @@ class selection_check:
 
         return np.array(chi2ndf)
 
-    def pid_decision(self):
+    def pid_decision(self,candidate):
         
-        hnl= 3
-        if(len(self.tree.Pid)>2):
-           # print("Pid is for more than 3 particles!")
-            first_daughter_id = self.tree.fitTrack2MC[self.tree.Particles[0].GetDaughter(0)]
-            second_daughter_id = self.tree.fitTrack2MC[self.tree.Particles[0].GetDaughter(1)]
-            for iP in range(len(self.tree.Pid)):
-                if self.tree.fitTrack2MC[self.tree.Pid[iP].TrackID()]==first_daughter_id: first_Part_index = iP
-                if self.tree.fitTrack2MC[self.tree.Pid[iP].TrackID()]==second_daughter_id: second_Part_index = iP
-        else:
-            first_Part_index = 0
-            second_Part_index = 1
+        """
+        Interim solution for PID check:Uses track truth info assuming 100% efficiency in CaloPID
+        
+
+        pid_code: 0 = hadronic,
+                  1 = dileptonic,
+                  2 = semileptonic,
+                  3 = at least one track has unknown PID, #never used since truth
+                  4 = fewer than two PID tracks available #two track candidates
+        """
+
         if(len(self.tree.Pid)<2):
-            print("Pid is less  than 2 particles!")
+            print("Pid is less  than 2 particles!") #sanity check?
             return 4
-        if(self.tree.Pid[first_Part_index].TrackPID()==1): first_daughter = "electron"
-        elif self.tree.Pid[first_Part_index].TrackPID()==3 : first_daughter = "muon"
-        elif self.tree.Pid[first_Part_index].TrackPID()==2: first_daughter = "hadron"
-        else: first_daughter = "noClue"
-        if(self.tree.Pid[second_Part_index].TrackPID()==1): second_daughter = "electron"
-        elif self.tree.Pid[second_Part_index].TrackPID()==3 : second_daughter = "muon"
-        elif self.tree.Pid[second_Part_index].TrackPID()==2: second_daughter = "hadron"
-        else: second_daughter = "noClue"
+
         
-        if first_daughter=="muon":
-            if second_daughter == "muon": hnl = 1
-            elif second_daughter == "electron": hnl = 1
-            elif second_daughter == "hadron": hnl = 2
-            else: hnl = 3
-        if first_daughter=="electron":
-            if second_daughter == "muon": hnl = 1
-            elif second_daughter == "electron": hnl = 1
-            elif second_daughter == "hadron": hnl = 2
-            else: hnl = 3
-        if first_daughter=="hadron":
-            if second_daughter == "muon": hnl = 2
-            elif second_daughter == "electron": hnl = 2
-            elif second_daughter == "hadron": hnl = 0
-            else: hnl = 3
-        return hnl,first_daughter,second_daughter
+        d1_mc=self.tree.MCTrack[self.tree.fitTrack2MC[candidate.GetDaughter(0)]]
+        d1_pdg=d1_mc.GetPdgCode()
+
+        d2_mc=self.tree.MCTrack[self.tree.fitTrack2MC[candidate.GetDaughter(1)]]
+        d2_pdg=d2_mc.GetPdgCode()
+        
+        
+        LEPTON_PDGS = {11, 13}      # 11 = electron, 13 = muon
+
+        d1_is_lepton = d1_pdg in LEPTON_PDGS
+        d2_is_lepton = d2_pdg in LEPTON_PDGS
+
+
+        if d1_is_lepton and d2_is_lepton:
+            return 1                      # dileptonic
+        elif d1_is_lepton or d2_is_lepton:
+            return 2                      # semileptonic
+        else:
+            return 0                      # hadronic
 
     def preselection_cut(self, candidate, IP_cut=250, show_table=False):
         """
@@ -452,6 +452,7 @@ class event_inspector:
         self.pdg = ROOT.TDatabasePDG.Instance()
         pythia8_conf.addHNLtoROOT()
         self.event= ctx.tree
+        self.fitter=ctx.fitter
 
     def dump_event(self, track_p_threshold=0):
         """Dump the MCtruth of the event."""
@@ -493,6 +494,41 @@ class event_inspector:
             )
         )
 
+    def switch_to_truth_hypotheses(self):
+        """
+        For every FitTrack in `evt` replace the default muon hypothesis
+        by the MC-truth hypothesis (taken from evt.MCTrack) and refit
+        *only* that new rep.
+        """
+        evt=self.event
+
+        for i_trk, gf_track in enumerate(evt.FitTracks):
+            # ------------------------------
+            # 1) look up the matching MC particle
+            # ------------------------------
+            mc_idx = evt.fitTrack2MC[i_trk]              # mapping from SHiP reco to MC
+            pdg    = int(evt.MCTrack[mc_idx].GetPdgCode())
+
+            # ------------------------------
+            # 3) wipe the old rep(s) and attach the new one
+            # ---------------------------------------------------------
+            for rep_id in reversed(range(gf_track.getNumReps())):   # delete highest → 0
+                gf_track.deleteTrackRep(rep_id)
+
+            # ---------------------------------------------------------
+            # add the truth-PDG hypothesis and refit
+            # ---------------------------------------------------------
+            new_rep = ROOT.genfit.RKTrackRep(pdg)
+            gf_track.addTrackRep(new_rep)
+            rep_id  = gf_track.getIdForRep(new_rep)
+            gf_track.setCardinalRep(rep_id)
+            
+            self.fitter.processTrackWithRep(gf_track, new_rep, True)
+
+            fs = gf_track.getFitStatus(rep_id)  
+            # (Optional) inspect the fit result
+            print("χ² / nDoF =", fs.getChi2() / fs.getNdf())
+        #return d1_rec,d2_rec
 
 class veto_tasks():
     "Class derived from ShipVeto WIP"
@@ -506,7 +542,7 @@ class veto_tasks():
         #self.detList  = self.detMap()
         self.tree = ctx.tree
         self.sigma_t_SBThit=1.0              #(ns)
-
+        self.sel = selection_check(ctx)
         
 
     def SBT_decision(self,mcParticle=None,detector='liquid',threshold=45,advSBT=None,candidate=None):
@@ -665,6 +701,40 @@ class veto_tasks():
                 hits_in_tol.append(hit)
 
         return hits_in_tol, xs, ys, zs
+
+    def pointing_to_vertex(self,candidate=None,Digi_SBTHits=None,threshold=45,time_window_ns=3,t_vtx=None):
+         
+        if candidate==None:
+            candidate=self.tree.Particles[0]
+    
+        candidate_pos = ROOT.TVector3()
+        candidate.GetVertex(candidate_pos)
+        
+        if Digi_SBTHits==None:
+            Digi_SBTHits=self.tree.Digi_SBTHits
+        
+        if t_vtx==None:
+            t_vtx = self.sel.define_candidate_time(candidate)  # already in ns
+        
+        matched=[]
+        
+        for hit in Digi_SBTHits:
+
+            if hit.GetEloss() < threshold*0.001: continue
+
+            d_cm = (hit.GetXYZ() - candidate_pos).Mag()
+            
+            t_exp = t_vtx + (d_cm / u.c_light)
+
+            dt = abs(hit.GetTDC() - t_exp)             # in ns
+
+            if dt < time_window_ns:
+                matched.append(hit)
+
+        if len(matched):
+            return matched, True            
+
+        return matched, False            
 
 
 class weights_calc():

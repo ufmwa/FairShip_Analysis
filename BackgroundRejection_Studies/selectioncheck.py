@@ -11,9 +11,11 @@ from collections import defaultdict
 import helperfunctions as analysis_toolkit
 from tabulate import tabulate
 import numpy as np
-import pandas as pd, pathlib, datetime 
+import pandas as pd
+import pathlib, datetime 
 import glob
 
+other_ip=set()
 
 def dump_summary_csv(job_id,event_stats,pass_stats,out_dir= ".",**meta):
     """Dump Analysis Summary onto csv file."""  
@@ -32,10 +34,12 @@ def dump_summary_csv(job_id,event_stats,pass_stats,out_dir= ".",**meta):
 
 def ip_category(ip_elem):
     """Return which sub-sample the event belongs to."""
-    if ip_elem.startswith(("LiSc", "VetoInnerWall", "VetoOuterWall")):
+    
+    if ip_elem.startswith(("LiSc", "VetoInnerWall", "VetoOuterWall","VetoVerticalRib","VetoLongitRib")):
         return "vesselCase"
-    if ip_elem.startswith("DecayVolume"):
+    if ip_elem.startswith("DecayVacuum"):
         return "heliumCase"
+    
     return "all"       
 
 def fixwidth_tabulate(rows, headers, *, width=50, **kw):
@@ -47,14 +51,14 @@ def fixwidth_tabulate(rows, headers, *, width=50, **kw):
                     headers=headers2,
                     **kw)
 
-def main(weight_function,IP_CUT = 250):
+def main(weight_function,IP_CUT = 250,fixTDC=None):
     
     """Main function to analyse the selection efficiency of different cuts."""
     
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("-p", "--path"  ,dest="path"         ,help="Path to simulation file",required=True)
     parser.add_argument("-i","--jobDir"  ,dest="jobDir"      ,help="job name of input file",  type=str,required=True)
-    parser.add_argument(     "--test"    ,dest="testing_code",help="Run Test"              ,  action="store_true")
+    parser.add_argument(     "--test"    ,dest="testing_code",help="Run Test on 100 events of the input file"              ,  action="store_true")
 
     options = parser.parse_args()
 
@@ -91,6 +95,8 @@ def main(weight_function,IP_CUT = 250):
                 "BasicSBT@0MeV",
                 "AdvSBT@45MeV",
                 "AdvSBT@90MeV",
+                "TOFSBT@45MeV", 
+                "TOFSBT@90MeV", 
                 "UBT",
                 ]
 
@@ -101,7 +107,11 @@ def main(weight_function,IP_CUT = 250):
     combinedveto_tags = ["UBT+BasicSBT@45MeV",
                          "UBT+BasicSBT@90MeV",
                          "UBT+AdvSBT@45MeV",
-                         "UBT+AdvSBT@90MeV"]
+                         "UBT+AdvSBT@90MeV",
+                         "UBT+TOFSBT@45MeV",
+                         "UBT+TOFSBT@90MeV",
+                            ]
+
 
     combined_Basic45       = ["preselection+UBT",
                         "preselection+UBT+BasicSBT@45MeV",
@@ -124,9 +134,22 @@ def main(weight_function,IP_CUT = 250):
                         "preselection+UBT+AdvSBT@90MeV+PID+inv_mass"]
 
 
+    combined_TOF45       = ["preselection+UBT",
+                        "preselection+UBT+TOFSBT@45MeV",
+                        "preselection+UBT+TOFSBT@45MeV+PID",
+                        "preselection+UBT+TOFSBT@45MeV+PID+inv_mass"]
+
+    combined_TOF90       = ["preselection+UBT",
+                        "preselection+UBT+TOFSBT@90MeV",
+                        "preselection+UBT+TOFSBT@90MeV+PID",
+                        "preselection+UBT+TOFSBT@90MeV+PID+inv_mass"]
+
     combined_other    = [
                         "preselection+AdvSBT@45MeV",
                         "preselection+AdvSBT@90MeV",
+                        "preselection+TOFSBT@45MeV",
+                        "preselection+TOFSBT@90MeV",
+
                         "preselection+BasicSBT@45MeV",
                         "preselection+BasicSBT@90MeV",
                         "preselection+inv_mass",
@@ -134,6 +157,9 @@ def main(weight_function,IP_CUT = 250):
                         "preselection+UBT+PID+inv_mass",
                         "preselection+UBT+BasicSBT@45MeV+inv_mass",
                         "preselection+UBT+BasicSBT@90MeV+inv_mass",
+                        "preselection+UBT+TOFSBT@45MeV+inv_mass",
+                        "preselection+UBT+TOFSBT@90MeV+inv_mass",
+
                         "preselection+UBT+AdvSBT@45MeV+inv_mass",
                         "preselection+UBT+AdvSBT@90MeV+inv_mass",
                         ]
@@ -147,6 +173,7 @@ def main(weight_function,IP_CUT = 250):
         combinedveto_tags,
         combined_Basic45, combined_Basic90,
         combined_Adv45,   combined_Adv90,
+        combined_TOF45,   combined_TOF90,
         combined_other
     ))
 
@@ -167,17 +194,17 @@ def main(weight_function,IP_CUT = 250):
         
         pre = f"{c}_"
         
-        ut.bookHist(hist_dict[c], pre +"event_weight", "Event weight", 100, 100, 100)
-        #ut.bookHist(hist_dict[c], pre +"candidate_time","candidate time @ decay vertex; ns",200,100, 100,)
-        ut.bookHist(hist_dict[c], pre +"impact_parameter", "Impact parameter; cm", 200, 100, 100)
-        ut.bookHist(hist_dict[c], pre +"dist_to_innerwall", "Distance to inner wall; cm", 200, 100, 100)
-        ut.bookHist(hist_dict[c], pre +"dist_to_vesselentrance","Distance to Decay Vessel Entrance; cm", 200, 100,100, )
-        ut.bookHist(hist_dict[c], pre +"inv_mass", "Invariant mass; GeV", 200, 100, 100)
-        ut.bookHist(hist_dict[c], pre +"DOCA", "Distance of closest approach; cm", 200, 100, 100)
-        ut.bookHist(hist_dict[c], pre +"len_Particles", "len(tree.Particles); Number of candidates per event", 200,100,100,)
-        ut.bookHist(hist_dict[c], pre +"d_mom", "momentum of daughters; d1 (GeV); d2 (GeV)",200,100,100,200,100,100,)
-        ut.bookHist(hist_dict[c], pre +"nDOF", "nDOF; d1; d2", 200, 100, 100, 200, 100, 100)
-        ut.bookHist(hist_dict[c], pre +"chi2nDOF", "chi2nDOF; d1; d2", 200, 100, 100, 200, 100, 100)
+        ut.bookHist(hist_dict[c], pre +"rho_l", "rho_l" , 1000, 0, 1000)
+        ut.bookHist(hist_dict[c], pre +"candidate_time","candidate time @ decay vertex; ns",300,0, 300)
+        ut.bookHist(hist_dict[c], pre +"impact_parameter", "Impact parameter; cm", 500, 0, 500)
+        ut.bookHist(hist_dict[c], pre +"dist_to_innerwall", "Distance to inner wall; cm", 200, 0, 100)
+        ut.bookHist(hist_dict[c], pre +"dist_to_vesselentrance","Distance to Decay Vessel Entrance; cm", 500, 0,5000)
+        ut.bookHist(hist_dict[c], pre +"inv_mass", "Invariant mass; GeV", 500, 0, 5)
+        ut.bookHist(hist_dict[c], pre +"DOCA", "Distance of closest approach; cm", 1000, 0, 10)
+        ut.bookHist(hist_dict[c], pre +"len_Particles", "len(tree.Particles); Number of candidates per event", 5,0,5)
+        ut.bookHist(hist_dict[c], pre +"d_mom", "momentum of daughters; d1 (GeV); d2 (GeV)",400,0,400,400,0,400)
+        ut.bookHist(hist_dict[c], pre +"nDOF", "nDOF; d1; d2", 30, 0, 30, 30, 0, 30)
+        ut.bookHist(hist_dict[c], pre +"chi2nDOF", "chi2nDOF; d1; d2", 10, 0, 10, 10, 0, 10)
 
 
     for event_nr, event in enumerate(tree):
@@ -209,7 +236,7 @@ def main(weight_function,IP_CUT = 250):
         for c in {"all", cat}:
             pre = f"{c}_"
 
-            hist_dict[c][pre+"event_weight"].Fill(event_weight)    
+            hist_dict[c][pre+"rho_l"].Fill(event.MCTrack[2].GetWeight())
     
             event_stats[c]["simulated"][event_nr] = event_weight
     
@@ -219,6 +246,9 @@ def main(weight_function,IP_CUT = 250):
         for candidate_id_in_event, signal in enumerate(event.Particles):
             
             selection_list =  defaultdict(dict) 
+            
+            if cat=="all":
+                other_ip.add(ip_elem)
 
             for c in {"all", cat}:
                 pre = f"{c}_"
@@ -315,19 +345,33 @@ def main(weight_function,IP_CUT = 250):
                 if ELoss>=45*0.001:
                     AdvSBT45_veto=True
             
-            selection_list['AdvSBT@90MeV'          ]   = not(AdvSBT90_veto)
             selection_list['AdvSBT@45MeV'          ]   = not(AdvSBT45_veto)
+            selection_list['AdvSBT@90MeV'          ]   = not(AdvSBT90_veto)
             
+            if fixTDC: #fix timing bug for neuDIS
             
+                Digi_SBTHits,candidate_time=fixTDC(event,signal)
+
+                hits_matched,TOFSBT45_veto=veto_ship.pointing_to_vertex(candidate=signal,threshold=45,Digi_SBTHits=Digi_SBTHits,t_vtx=candidate_time)
+                hits_matched,TOFSBT90_veto=veto_ship.pointing_to_vertex(candidate=signal,threshold=90,Digi_SBTHits=Digi_SBTHits,t_vtx=candidate_time)
+            
+            else:
+                hits_matched,TOFSBT45_veto=veto_ship.pointing_to_vertex(candidate=signal,threshold=45)
+                hits_matched,TOFSBT90_veto=veto_ship.pointing_to_vertex(candidate=signal,threshold=90)
+            
+            selection_list['TOFSBT@45MeV'          ]   = not(TOFSBT45_veto)
+            selection_list['TOFSBT@90MeV'          ]   = not(TOFSBT90_veto)
             #-------------------------------------------------------------------------
             #-----------------------------Other Cuts----------------------------------
             inv_mass_pass=selection.invariant_mass(signal)  > 0.15*u.GeV
+
             selection_list['inv_mass']   = inv_mass_pass
 
-            pid,first_daughter,second_daughter= selection.pid_decision()
-            #print("The two daughters are ", first_daughter,second_daughter)    
-            if IP_CUT> 20*u.cm:     pid_pass  = (pid==1 or pid==3)
-            elif IP_CUT < 20*u.cm:  pid_pass  = (pid==2 or pid==3)
+            pid= selection.pid_decision(candidate=signal)
+
+            if IP_CUT > 10*u.cm:   pid_pass  = (pid==1 or pid==3) #dileptonic final state
+            elif IP_CUT <= 10*u.cm:  pid_pass  = (pid==2 or pid==3) #semileptonic final state
+            
             selection_list['PID']   = pid_pass
             
             #--------------------------------Combined Cuts-----------------------------------------            
@@ -337,7 +381,9 @@ def main(weight_function,IP_CUT = 250):
             selection_list['UBT+'+ 'BasicSBT@90MeV' ]   =   selection_list['UBT'] and selection_list['BasicSBT@90MeV']
             selection_list['UBT+'+ 'AdvSBT@45MeV'   ]   =   selection_list['UBT'] and selection_list['AdvSBT@45MeV']
             selection_list['UBT+'+ 'AdvSBT@90MeV'   ]   =   selection_list['UBT'] and selection_list['AdvSBT@90MeV']            
-            
+            selection_list['UBT+'+ 'TOFSBT@45MeV'   ]   =   selection_list['UBT'] and selection_list['TOFSBT@45MeV']
+            selection_list['UBT+'+ 'TOFSBT@90MeV'   ]   =   selection_list['UBT'] and selection_list['TOFSBT@90MeV']      
+
             selection_list['preselection+'+ 'UBT']   = selection_list['preselection'] and selection_list['UBT']
             
             #--Basic@45--
@@ -360,8 +406,20 @@ def main(weight_function,IP_CUT = 250):
             selection_list['preselection+'+ 'UBT+'+ 'AdvSBT@90MeV+'   +'PID'            ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['AdvSBT@90MeV']    and selection_list['PID']
             selection_list['preselection+'+ 'UBT+'+ 'AdvSBT@90MeV+'   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and selection_list['AdvSBT@90MeV']    and selection_list['PID']  and selection_list['inv_mass']
 
+            #--TOF@45MeV--
+            selection_list['preselection+'+ 'UBT+'+ 'TOFSBT@45MeV'                      ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['TOFSBT@45MeV']
+            selection_list['preselection+'+ 'UBT+'+ 'TOFSBT@45MeV+'   +'PID'            ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['TOFSBT@45MeV']    and selection_list['PID']
+            selection_list['preselection+'+ 'UBT+'+ 'TOFSBT@45MeV+'   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and selection_list['TOFSBT@45MeV']    and selection_list['PID']  and selection_list['inv_mass']
+
+            #--TOF@90MeV--
+            selection_list['preselection+'+ 'UBT+'+ 'TOFSBT@90MeV'                      ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['TOFSBT@90MeV']
+            selection_list['preselection+'+ 'UBT+'+ 'TOFSBT@90MeV+'   +'PID'            ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['TOFSBT@90MeV']    and selection_list['PID']
+            selection_list['preselection+'+ 'UBT+'+ 'TOFSBT@90MeV+'   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and selection_list['TOFSBT@90MeV']    and selection_list['PID']  and selection_list['inv_mass']
+
             
             # other cuts as backup info
+            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + TOFSBT ]@45MeV '   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@45MeV'] and selection_list['TOFSBT@45MeV'])   and selection_list['PID']  and selection_list['inv_mass']
+            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + TOFSBT ]@90MeV '   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@90MeV'] and selection_list['TOFSBT@90MeV'])    and selection_list['PID']  and selection_list['inv_mass']
             
             selection_list['preselection+'                                  +'inv_mass' ]   = selection_list['preselection']                                                                                            and selection_list['inv_mass']
             selection_list['preselection+'+ 'UBT+'                          +'inv_mass' ]   = selection_list['preselection'] and selection_list['UBT']                                                                  and selection_list['inv_mass']
@@ -370,11 +428,16 @@ def main(weight_function,IP_CUT = 250):
             selection_list['preselection+'+ 'UBT+'+ 'BasicSBT@90MeV+'       +'inv_mass' ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['BasicSBT@90MeV']                             and selection_list['inv_mass']
             selection_list['preselection+'+ 'UBT+'+ 'AdvSBT@45MeV+'         +'inv_mass' ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['AdvSBT@45MeV']                               and selection_list['inv_mass']
             selection_list['preselection+'+ 'UBT+'+ 'AdvSBT@90MeV+'         +'inv_mass' ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['AdvSBT@90MeV']                               and selection_list['inv_mass']
+            selection_list['preselection+'+ 'UBT+'+ 'TOFSBT@45MeV+'         +'inv_mass' ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['TOFSBT@45MeV']                               and selection_list['inv_mass']
+            selection_list['preselection+'+ 'UBT+'+ 'TOFSBT@90MeV+'         +'inv_mass' ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['TOFSBT@90MeV']                               and selection_list['inv_mass']
+
 
             selection_list['preselection+'        + 'BasicSBT@45MeV'                    ]   = selection_list['preselection']                           and selection_list['BasicSBT@45MeV']
             selection_list['preselection+'        + 'BasicSBT@90MeV'                    ]   = selection_list['preselection']                           and selection_list['BasicSBT@90MeV']
             selection_list['preselection+'        + 'AdvSBT@45MeV'                      ]   = selection_list['preselection']                           and selection_list['AdvSBT@45MeV']
             selection_list['preselection+'        + 'AdvSBT@90MeV'                      ]   = selection_list['preselection']                           and selection_list['AdvSBT@90MeV']
+            selection_list['preselection+'        + 'TOFSBT@45MeV'                      ]   = selection_list['preselection']                           and selection_list['TOFSBT@45MeV']
+            selection_list['preselection+'        + 'TOFSBT@90MeV'                      ]   = selection_list['preselection']                           and selection_list['TOFSBT@90MeV']
 
             #-------------------------------------------------------------------------
 
@@ -452,6 +515,8 @@ def main(weight_function,IP_CUT = 250):
                         ("Ordered cuts (BasicSBT@90 MeV threshold)"     , combined_Basic90),
                         ("Ordered cuts (AdvSBT@45 MeV threshold)"       , combined_Adv45),
                         ("Ordered cuts (AdvSBT@90 MeV threshold)"       , combined_Adv90),
+                        ("Ordered cuts (TOFSBT@45 MeV threshold)"       , combined_TOF45),
+                        ("Ordered cuts (TOFSBT@90 MeV threshold)"       , combined_TOF90),
                         ]
         
 
@@ -487,6 +552,7 @@ def main(weight_function,IP_CUT = 250):
             if tag not in printed_tags                      #and ev_map if  at least one event passed
         ]
 
+
         if fallback_tags:
             rows = [
                 [tag, len(pass_stats[cat][tag]), f"{sum(pass_stats[cat][tag].values()):.3f}"]
@@ -512,7 +578,7 @@ def main(weight_function,IP_CUT = 250):
             sample     =cat,                      # extra metadata column if you like
             ship_version="2024_helium"
         )
-
+    print(other_ip)
 
 if __name__ == "__main__":
     main()

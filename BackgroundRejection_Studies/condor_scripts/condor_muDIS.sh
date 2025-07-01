@@ -13,9 +13,10 @@ echo 'config sourced'
 
 python /afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/run_muonDIS.py -i "$JOB"
 
-mkdir -p "/eos/experiment/ship/user/anupamar/BackgroundStudies/muonDIS/$JOB"
+mkdir -p "/eos/experiment/ship/user/anupamar/BackgroundStudies/muonDIS_fullreco/$JOB"
 
-OUTPUTDIR="/eos/experiment/ship/user/anupamar/BackgroundStudies/muonDIS/$JOB"
+OUTPUTDIR="/eos/experiment/ship/user/anupamar/BackgroundStudies/muonDIS_fullreco/$JOB"
 
 xrdcp selectionparameters_*.root root://eospublic.cern.ch/"$OUTPUTDIR"/
 xrdcp selection_summary_*.csv root://eospublic.cern.ch/"$OUTPUTDIR"/
+

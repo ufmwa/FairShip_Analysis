@@ -11,12 +11,11 @@ source /afs/cern.ch/user/a/anupamar/HTCondor/configfiles/config_ECN3_2024.sh #al
 echo 'config sourced'
 #######################################################################################
 
-python /afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/run_neuDIS.py -i "$JOB" |& tee analysis_output.txt
+python /afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/run_fullreco.py -i "$JOB"
 
-mkdir -p "/eos/experiment/ship/user/anupamar/BackgroundStudies/neuDIS_fullreco/$JOB"
+mkdir -p "/eos/experiment/ship/user/anupamar/BackgroundStudies/mupi_EventCalc/$JOB"
 
-OUTPUTDIR="/eos/experiment/ship/user/anupamar/BackgroundStudies/neuDIS_fullreco/$JOB"
+OUTPUTDIR="/eos/experiment/ship/user/anupamar/BackgroundStudies/mupi_EventCalc/$JOB"
 
 xrdcp selectionparameters_*.root root://eospublic.cern.ch/"$OUTPUTDIR"/
 xrdcp selection_summary_*.csv root://eospublic.cern.ch/"$OUTPUTDIR"/
-xrdcp analysis_output.txt root://eospublic.cern.ch/"$OUTPUTDIR"/

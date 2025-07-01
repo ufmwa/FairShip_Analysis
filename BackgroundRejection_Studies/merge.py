@@ -1,138 +1,177 @@
 #!/usr/bin/env python3
-"""Script to combine results from run_<background>.py."""
+"""Script to combine results from run_<background>.py and interactively query contributing jobs by number."""
 
-#-----------------------------------------------------------------------------------------------------------
 import glob
 from pathlib import Path
 import pandas as pd
 from tabulate import tabulate
 from argparse import ArgumentParser
+import sys
+
 
 parser = ArgumentParser(description=__doc__)
-
 group1 = parser.add_mutually_exclusive_group(required=True)
 
-group1.add_argument("--muonDIS"   ,dest="muonDIS",help="Summarise muonDIS background studies", action="store_true")
-group1.add_argument("--neuDIS"    ,dest="neuDIS" ,help="Summarise neuDIS background studies",  action="store_true")
+group1.add_argument("--muonDIS", dest="muonDIS",help="Summarise muonDIS background studies", action="store_true")
+group1.add_argument("--neuDIS",  dest="neuDIS" ,help="Summarise neuDIS background studies",  action="store_true")
+group1.add_argument("--mupi",    dest="mupi"   ,help="Summarise full. reco studies",         action="store_true")
+group1.add_argument("--mumuv",    dest="mumuv"   ,help="Summarise partial. reco studies",      action="store_true")
 
 group2 = parser.add_mutually_exclusive_group(required=True)
+group2.add_argument("--all"        , dest="all"       ,help="All interactions"                            , action="store_true")
+group2.add_argument("--vesselCase" , dest="vesselCase",help="Interactions only in the SBT Vessel"         , action="store_true")
+group2.add_argument("--heliumCase" , dest="heliumCase",help="Interactions only in the DecayVolume (helium)", action="store_true")
 
-group2.add_argument("--all"           ,dest="all"        ,help="All interactions"                               , action="store_true")
-group2.add_argument("--vesselCase"    ,dest="vesselCase" ,help="Interactions only in the SBT Vessel"            , action="store_true")
-group2.add_argument("--heliumCase"    ,dest="heliumCase" ,help="Interactions only in the DecayVolume(helium)"   , action="store_true")
+parser.add_argument("--test", dest="testing_code" , help="Run Test" , required=False, action="store_true",default=False)
 
 options = parser.parse_args()
 
+if options.all:         keyword = "all"
+elif options.vesselCase:  keyword = "vesselCase"
+elif options.heliumCase:  keyword = "heliumCase"
 
-if options.all:         keyword="all"
-if options.vesselCase:  keyword="vesselCase"
-if options.heliumCase:  keyword="heliumCase"
 
+main_path='/eos/experiment/ship/user/anupamar/BackgroundStudies/'#backup_noPID'
 if options.muonDIS:
-    pathlist=['/eos/experiment/ship/user/anupamar/BackgroundStudies/muonDIS/SBT','/eos/experiment/ship/user/anupamar/BackgroundStudies/muonDIS/Tr']
-if options.neuDIS:
-    pathlist=['/eos/experiment/ship/user/anupamar/BackgroundStudies/neuDIS/']
+    pathlist = [
+        main_path+'/muonDIS/SBT',
+        main_path+'/muonDIS/Tr'
+    ]
 
+if options.neuDIS:
+    pathlist = [main_path+'/neuDIS/']
+
+if options.mupi:
+    pathlist = [main_path+'/mupi_EventCalc/']
+
+if options.mumuv:
+    pathlist = [main_path+'/2muv_EventCalc/']
+    
+
+# tag definitions
 pre_tags = [
     "n_particles", "fiducial", "dist2innerwall", "dist2vesselentrance",
     "impact_par", "doca", "n_dof", "reduced_chi2", "d_mom", "preselection",
 ]
-
 veto_tags = [
     "BasicSBT@45MeV", "BasicSBT@90MeV", "BasicSBT@0MeV",
-    "AdvSBT@45MeV", "AdvSBT@90MeV", "UBT",
+    "AdvSBT@45MeV", "AdvSBT@90MeV", "TOFSBT@45MeV", "TOFSBT@90MeV", "UBT",
 ]
-
-combinedveto_tags = [
-    "UBT+BasicSBT@45MeV", "UBT+BasicSBT@90MeV",
-    "UBT+AdvSBT@45MeV",   "UBT+AdvSBT@90MeV",
-]
-
-combined_Basic45 = [
-    "preselection+UBT",
-    "preselection+UBT+BasicSBT@45MeV",
-    "preselection+UBT+BasicSBT@45MeV+PID",
-    "preselection+UBT+BasicSBT@45MeV+PID+inv_mass",
-]
-combined_Basic90 = [
-    "preselection+UBT",
-    "preselection+UBT+BasicSBT@90MeV",
-    "preselection+UBT+BasicSBT@90MeV+PID",
-    "preselection+UBT+BasicSBT@90MeV+PID+inv_mass",
-]
-combined_Adv45 = [
-    "preselection+UBT",
-    "preselection+UBT+AdvSBT@45MeV",
-    "preselection+UBT+AdvSBT@45MeV+PID",
-    "preselection+UBT+AdvSBT@45MeV+PID+inv_mass",
-]
-combined_Adv90 = [
-    "preselection+UBT",
-    "preselection+UBT+AdvSBT@90MeV",
-    "preselection+UBT+AdvSBT@90MeV+PID",
-    "preselection+UBT+AdvSBT@90MeV+PID+inv_mass",
-]
+combinedveto_tags = ["UBT+BasicSBT@45MeV","UBT+BasicSBT@90MeV","UBT+AdvSBT@45MeV","UBT+AdvSBT@90MeV","UBT+TOFSBT@45MeV","UBT+TOFSBT@90MeV"]
+combined_Basic45 = ["preselection+UBT","preselection+UBT+BasicSBT@45MeV","preselection+UBT+BasicSBT@45MeV+PID","preselection+UBT+BasicSBT@45MeV+PID+inv_mass"]
+combined_Basic90 = ["preselection+UBT","preselection+UBT+BasicSBT@90MeV","preselection+UBT+BasicSBT@90MeV+PID","preselection+UBT+BasicSBT@90MeV+PID+inv_mass"]
+combined_Adv45   = ["preselection+UBT","preselection+UBT+AdvSBT@45MeV","preselection+UBT+AdvSBT@45MeV+PID","preselection+UBT+AdvSBT@45MeV+PID+inv_mass"]
+combined_Adv90   = ["preselection+UBT","preselection+UBT+AdvSBT@90MeV","preselection+UBT+AdvSBT@90MeV+PID","preselection+UBT+AdvSBT@90MeV+PID+inv_mass"]
+combined_TOF45   = ["preselection+UBT","preselection+UBT+TOFSBT@45MeV","preselection+UBT+TOFSBT@45MeV+PID","preselection+UBT+TOFSBT@45MeV+PID+inv_mass"]
+combined_TOF90   = ["preselection+UBT","preselection+UBT+TOFSBT@90MeV","preselection+UBT+TOFSBT@90MeV+PID","preselection+UBT+TOFSBT@90MeV+PID+inv_mass"]
 
 table_specs = [
     ("Combined vetosystem efficiency (UBT x SBT)", combinedveto_tags),
-    ("Ordered cuts (BasicSBT@45 MeV threshold)",   combined_Basic45),
-    ("Ordered cuts (BasicSBT@90 MeV threshold)",   combined_Basic90),
-    ("Ordered cuts (AdvSBT@45 MeV threshold)",     combined_Adv45),
-    ("Ordered cuts (AdvSBT@90 MeV threshold)",     combined_Adv90),
+    ("Ordered cuts (BasicSBT@45 MeV threshold)", combined_Basic45),
+    ("Ordered cuts (BasicSBT@90 MeV threshold)", combined_Basic90),
+    ("Ordered cuts (AdvSBT@45 MeV threshold)",   combined_Adv45),
+    ("Ordered cuts (AdvSBT@90 MeV threshold)",   combined_Adv90),
+    ("Ordered cuts (TOFSBT@45 MeV threshold)",  combined_TOF45),
+    ("Ordered cuts (TOFSBT@90 MeV threshold)",  combined_TOF90),
 ]
 
+def fmt(value, denom, pct_fmt=".2f"):
+    if denom:
+        pct = 100 * value / denom
+        return f"{value:{'.2e'}} ({pct:{pct_fmt}} %)"
+    return f"{value:{'.2e'}}"
 
-csv_files = [
-    str(csv_path)
-    for base in pathlist
-    for csv_path in Path(base).glob(
-        f"job_*/selection_summary_{keyword}*.csv")   
-]
+# load CSVs
+def load_csvs(pathlist, keyword):
 
+    csvs = [str(p) for base in pathlist for p in Path(base).glob(f"job_*/selection_summary_{keyword}*.csv")]
+    
+    if options.testing_code:         
+        csvs = csvs[:5]              #just take the first five
+    if not csvs: raise FileNotFoundError
+    return pd.concat((pd.read_csv(f) for f in csvs), ignore_index=True)
 
-df = pd.concat((pd.read_csv(f) for f in csv_files), ignore_index=True)
-
-agg = (df.groupby("tag")[["nCandidates", "nEvents15y"]]
-         .sum()
-         .sort_index())
-
-def _vals(tag):
-    """return nCand, n15y (0, 0) if tag never appears"""
-    if tag in agg.index:
-        row = agg.loc[tag]
-        return int(row.nCandidates), row.nEvents15y
-    return 0, 0.0
-
-
-def _block(title, tags, show_title=True):
+df = load_csvs(pathlist, keyword)
+agg = df.groupby('tag')[['nCandidates','nEvents15y']].sum().sort_index()
+rec_nc, rec_n15 = agg.loc["reconstructed", ["nCandidates", "nEvents15y"]]
+sim_nc, sim_n15 = agg.loc["simulated", ["nCandidates", "nEvents15y"]]
+# print summary blocks
+def _block(title, tags):
     rows = []
     for t in tags:
-        nC, n15 = _vals(t)
-        rows.append([t, nC, f"{n15:.3f}"])
-    print(tabulate(rows,
-                   headers=[title if show_title else " ",
-                            "nCandidates", "nEvents in 15 y"],
-                   tablefmt="rounded_grid",
-                   floatfmt=".3f"),"\n\n")
+        nc = int(agg.at[t,'nCandidates']) if t in agg.index else 0
+        n15 = agg.at[t,'nEvents15y'] if t in agg.index else 0.0
 
-# Event statistics --------------------------------------------------------
-_block("", ["simulated", "reconstructed"], show_title=False)
+        if t == "simulated" : 
+            rows.append([t, 
+                        f"{nc:.2e}",
+                        f"{n15:.2e}"])
+        
+        elif t == "reconstructed" :                       
+            
+            rows.append([t,
+                         fmt(nc,  sim_nc),       # nEvents
+                         fmt(n15, sim_n15)])     # nEvents15y
+                         
+        else:
+            # all other rows: % relative to 'reconstructed'
+            rows.append([t,
+                         fmt(nc,  rec_nc),       # nEvents
+                         fmt(n15, rec_n15)])     # nEvents15y
 
-# Pre-selection -----------------------------------------------------------
-_block("Pre-Selection Cut", pre_tags)
 
-# Veto systems ------------------------------------------------------------
-_block("Veto System", veto_tags)
+    if title=='Event Stats':
+        print(tabulate(rows, headers=[title,'nEvents generated(/nSim in %)','nEvents in 15 y (/nSim in %)'], tablefmt='rounded_grid', floatfmt='.3f'))
+    else:
+        print(tabulate(rows, headers=[title,'nEvents generated(/nReco in %)','nEvents in 15 y (/nReco in %)'], tablefmt='rounded_grid', floatfmt='.3f'))
+    print()
 
-# Combined / ordered tables ----------------------------------------------
+# 1) Event stats
+_block('Event Stats',['simulated','reconstructed'])
+
+# 2) Pre-selection
+_block('Pre-Selection Cut', pre_tags)
+
+# 3) Veto systems
+_block('Veto System', veto_tags)
+
+# 4) Combined / ordered
 for title, tags in table_specs:
     _block(title, tags)
 
-# Everything that never made it into a named table ------------------------
-printed = (set(["simulated", "reconstructed"])
-           | set(pre_tags) | set(veto_tags)
-           | {t for _, g in table_specs for t in g})
+# 5) Other cuts
+printed = set(['simulated','reconstructed']) | set(pre_tags) | set(veto_tags) | set(t for _,g in table_specs for t in g)
 others = [t for t in agg.index if t not in printed]
+if others: _block('Other cuts', others)
+#---------------------------------------------------------------------------------------------------------------------------------------
+# indexed menu clustered for further interactive debugging
+all_tags = []
+clustered = [('Event Stats',['simulated','reconstructed']),
+             ('Pre-Selection',pre_tags),('Veto',veto_tags)] + table_specs + [('Other cuts',others)]
+for _, tags in clustered:
+    for t in tags:
+        all_tags.append(t)
+menu = [[i,t,int(agg.at[t,'nCandidates']) if t in agg.index else 0, f"{agg.at[t,'nEvents15y']:.3f}" if t in agg.index else '0.000']
+        for i,t in enumerate(all_tags)]
+print(tabulate(menu, headers=['#','tag','nEvents generated','nEvents15y'], tablefmt='rounded_grid', floatfmt='.3f'))
+print()
+# prompt
+try:
+    choice = input('Enter tag number (blank to exit): ').strip()
+    if not choice: sys.exit(0)
+    idx = int(choice)
+    tag = all_tags[idx]
+except:
+    print('Invalid.'); sys.exit(1)
+print(f"Selected [{idx}]: {tag}\n")
 
-if others:
-    _block("Other cuts", others)
+# lookup
+sel = df[(df.tag==tag)&(df.nCandidates>0)][['job','nEvents','nEvents15y']].reset_index(drop=True)
+if sel.empty:
+    print('No jobs with non-zero for',tag)
+else:
+    sel["nEvents"] = sel["nEvents"].apply(lambda x: fmt(x, rec_nc))
+    sel["nEvents15y"]  = sel["nEvents15y"].apply(lambda x: fmt(x, rec_n15))
+    print(tabulate(sel.values.tolist(), headers=['job','nEvents','nEvents15y'], tablefmt='rounded_grid', floatfmt='.3f'))
+
+#---------------------------------------------------------------------------------------------------------------------------------------
