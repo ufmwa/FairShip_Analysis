@@ -27,12 +27,18 @@ if options.analysistype=="EMBG":
 
 if options.analysistype=="mupi":
 	options.filename="joblists_mupi_EventCalc_ECN3_2024.csv" 
-	inputDir_list=['/eos/experiment/ship/user/anupamar/Signal_EventCalc/mupi/12435731/HNL_1.000e+00_5.000e+01_3.333e-01_3.333e-01_3.333e-01']	
+	inputDir_list=['/eos/experiment/ship/user/anupamar/Signal_EventCalc/mupi/12947081/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01']	
 
 if options.analysistype=="2muv":
 	options.filename="joblists_2muv_EventCalc_ECN3_2024.csv" 
-	inputDir_list=['/eos/experiment/ship/user/anupamar/Signal_EventCalc/2muv/12878270/HNL_1.000e+00_5.000e+01_3.333e-01_3.333e-01_3.333e-01']	
-		
+	inputDir_list=["/eos/experiment/ship/user/anupamar/Signal_EventCalc/2muv/12946374/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01"]	
+if options.analysistype=="erho":
+	options.filename="joblists_2pie1GeV_EventCalc_ECN3_2024.csv" 
+	inputDir_list=["/eos/experiment/ship/user/anupamar/Signal_EventCalc/2pie/12968088/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01"]
+if options.analysistype=="murho":
+	options.filename="joblists_2pimu1GeV_EventCalc_ECN3_2024.csv" 
+	inputDir_list=["/eos/experiment/ship/user/anupamar/Signal_EventCalc/2pimu/12968089/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01"]	
+
 with open(path_to_output+options.filename, 'w') as filekey: 
 	csvwriter = csv.writer(filekey)
 	for inputDir in inputDir_list:
@@ -52,6 +58,10 @@ with open(path_to_output+options.filename, 'w') as filekey:
 				csvwriter.writerow([inputFile])	
 			
 			if options.filename=="joblists_2muv_EventCalc_ECN3_2024.csv":
+				csvwriter.writerow([inputFile])	
+			if options.filename=="joblists_2pimu1GeV_EventCalc_ECN3_2024.csv":
+				csvwriter.writerow([inputFile])	
+			if options.filename=="joblists_2pie1GeV_EventCalc_ECN3_2024.csv":
 				csvwriter.writerow([inputFile])	
 
 

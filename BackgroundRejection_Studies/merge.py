@@ -14,7 +14,19 @@ group1 = parser.add_mutually_exclusive_group(required=True)
 
 group1.add_argument("--muonDIS", dest="muonDIS",help="Summarise muonDIS background studies", action="store_true")
 group1.add_argument("--neuDIS",  dest="neuDIS" ,help="Summarise neuDIS background studies",  action="store_true")
+
+group1.add_argument("--muonDIS_fullreco", dest="muonDIS_fullreco",help="Summarise muonDIS background studies for fully reco.", action="store_true")
+group1.add_argument("--muonDIS_leptonrho", dest="muonDIS_leptonrho",help="Summarise muonDIS background studies for leptonrho", action="store_true")
+
+group1.add_argument("--neuDIS_fullreco",  dest="neuDIS_fullreco" ,help="Summarise neuDIS background studies  for fully reco.",  action="store_true")
+group1.add_argument("--neuDIS_leptonrho", dest="neuDIS_leptonrho",help="Summarise neuDIS background studies for leptonrho", action="store_true")
+
 group1.add_argument("--mupi",    dest="mupi"   ,help="Summarise full. reco studies",         action="store_true")
+
+group1.add_argument("--erho",    dest="erho"   ,help="Summarise erho studies",         action="store_true")
+
+group1.add_argument("--murho",    dest="murho"   ,help="Summarise erho studies",         action="store_true")
+
 group1.add_argument("--mumuv",    dest="mumuv"   ,help="Summarise partial. reco studies",      action="store_true")
 
 group2 = parser.add_mutually_exclusive_group(required=True)
@@ -23,6 +35,7 @@ group2.add_argument("--vesselCase" , dest="vesselCase",help="Interactions only i
 group2.add_argument("--heliumCase" , dest="heliumCase",help="Interactions only in the DecayVolume (helium)", action="store_true")
 
 parser.add_argument("--test", dest="testing_code" , help="Run Test" , required=False, action="store_true",default=False)
+parser.add_argument("--dump", dest="dump", help="Write merged and aggregated DataFrames to CSV", action="store_true")
 
 options = parser.parse_args()
 
@@ -32,21 +45,47 @@ elif options.heliumCase:  keyword = "heliumCase"
 
 
 main_path='/eos/experiment/ship/user/anupamar/BackgroundStudies/'#backup_noPID'
+
 if options.muonDIS:
     pathlist = [
         main_path+'/muonDIS/SBT',
         main_path+'/muonDIS/Tr'
     ]
 
+if options.muonDIS_fullreco:
+    pathlist = [
+        main_path+'/muonDIS_fullreco/SBT',
+        main_path+'/muonDIS_fullreco/Tr'
+    ]
+
 if options.neuDIS:
     pathlist = [main_path+'/neuDIS/']
+
+if options.neuDIS_fullreco:
+    pathlist = [main_path+'/neuDIS_fullreco/']
+
+
+if options.neuDIS_leptonrho:
+    pathlist = [main_path+'/neuDIS_leptonrho/']
+
+if options.muonDIS_leptonrho:
+    pathlist = [
+        main_path+'/muonDIS_leptonrho/SBT',
+        main_path+'/muonDIS_leptonrho/Tr'
+    ]
 
 if options.mupi:
     pathlist = [main_path+'/mupi_EventCalc/']
 
 if options.mumuv:
     pathlist = [main_path+'/2muv_EventCalc/']
-    
+
+if options.erho:
+    pathlist = [main_path+'/erho_EventCalc/']
+
+if options.murho:
+    pathlist = [main_path+'/murho_EventCalc/']
+
 
 # tag definitions
 pre_tags = [
@@ -55,15 +94,17 @@ pre_tags = [
 ]
 veto_tags = [
     "BasicSBT@45MeV", "BasicSBT@90MeV", "BasicSBT@0MeV",
-    "AdvSBT@45MeV", "AdvSBT@90MeV", "TOFSBT@45MeV", "TOFSBT@90MeV", "UBT",
+    "AdvSBT@45MeV", "AdvSBT@90MeV","GNNSBT@45MeV", "TOFSBT@45MeV", "TOFSBT@90MeV", "UBT",
 ]
-combinedveto_tags = ["UBT+BasicSBT@45MeV","UBT+BasicSBT@90MeV","UBT+AdvSBT@45MeV","UBT+AdvSBT@90MeV","UBT+TOFSBT@45MeV","UBT+TOFSBT@90MeV"]
+combinedveto_tags = ["UBT+BasicSBT@45MeV","UBT+BasicSBT@90MeV","UBT+AdvSBT@45MeV","UBT+AdvSBT@90MeV","UBT+GNNSBT@45MeV","UBT+TOFSBT@45MeV","UBT+TOFSBT@90MeV"]
 combined_Basic45 = ["preselection+UBT","preselection+UBT+BasicSBT@45MeV","preselection+UBT+BasicSBT@45MeV+PID","preselection+UBT+BasicSBT@45MeV+PID+inv_mass"]
 combined_Basic90 = ["preselection+UBT","preselection+UBT+BasicSBT@90MeV","preselection+UBT+BasicSBT@90MeV+PID","preselection+UBT+BasicSBT@90MeV+PID+inv_mass"]
 combined_Adv45   = ["preselection+UBT","preselection+UBT+AdvSBT@45MeV","preselection+UBT+AdvSBT@45MeV+PID","preselection+UBT+AdvSBT@45MeV+PID+inv_mass"]
+combined_GNN45   = ["preselection+UBT","preselection+UBT+GNNSBT@45MeV","preselection+UBT+GNNSBT@45MeV+PID","preselection+UBT+GNNSBT@45MeV+PID+inv_mass"]
 combined_Adv90   = ["preselection+UBT","preselection+UBT+AdvSBT@90MeV","preselection+UBT+AdvSBT@90MeV+PID","preselection+UBT+AdvSBT@90MeV+PID+inv_mass"]
 combined_TOF45   = ["preselection+UBT","preselection+UBT+TOFSBT@45MeV","preselection+UBT+TOFSBT@45MeV+PID","preselection+UBT+TOFSBT@45MeV+PID+inv_mass"]
 combined_TOF90   = ["preselection+UBT","preselection+UBT+TOFSBT@90MeV","preselection+UBT+TOFSBT@90MeV+PID","preselection+UBT+TOFSBT@90MeV+PID+inv_mass"]
+combined_45   = ["preselection+UBT","preselection+UBT+[AdvSBT + GNNSBT ]@45MeV","preselection+UBT+[AdvSBT + GNNSBT ]@45MeV+ PID","preselection+UBT+[AdvSBT + GNNSBT ]@45MeV+ PID+inv_mass"]
 
 table_specs = [
     ("Combined vetosystem efficiency (UBT x SBT)", combinedveto_tags),
@@ -71,8 +112,10 @@ table_specs = [
     ("Ordered cuts (BasicSBT@90 MeV threshold)", combined_Basic90),
     ("Ordered cuts (AdvSBT@45 MeV threshold)",   combined_Adv45),
     ("Ordered cuts (AdvSBT@90 MeV threshold)",   combined_Adv90),
+    ("Ordered cuts (GNNSBT@45 MeV threshold)",   combined_GNN45),
     ("Ordered cuts (TOFSBT@45 MeV threshold)",  combined_TOF45),
     ("Ordered cuts (TOFSBT@90 MeV threshold)",  combined_TOF90),
+    ("Ordered cuts ([AdvSBT + GNNSBT] @45MeV threshold)",  combined_45),
 ]
 
 def fmt(value, denom, pct_fmt=".2f"):
@@ -89,10 +132,29 @@ def load_csvs(pathlist, keyword):
     if options.testing_code:         
         csvs = csvs[:5]              #just take the first five
     if not csvs: raise FileNotFoundError
+    valid_csvs = []
+    for f in csvs:
+        try:
+            valid_csvs.append(pd.read_csv(f))
+        except FileNotFoundError:
+            print(f"Warning: file not found, skipping → {f}")
+        except pd.errors.EmptyDataError:
+            print(f"Warning: empty or corrupted CSV, skipping → {f}")
+
     return pd.concat((pd.read_csv(f) for f in csvs), ignore_index=True)
 
 df = load_csvs(pathlist, keyword)
 agg = df.groupby('tag')[['nCandidates','nEvents15y']].sum().sort_index()
+
+if options.dump:
+    raw_out = "merged_rows.csv"
+    agg_out = "aggregated_by_tag.csv"
+    df.to_csv(raw_out, index=False)
+    agg.reset_index().to_csv(agg_out, index=False)
+    
+    print(f"[debug] Wrote raw merged rows → {raw_out}")
+    print(f"[debug] Wrote aggregated summary → {agg_out}")
+
 rec_nc, rec_n15 = agg.loc["reconstructed", ["nCandidates", "nEvents15y"]]
 sim_nc, sim_n15 = agg.loc["simulated", ["nCandidates", "nEvents15y"]]
 # print summary blocks
@@ -155,6 +217,7 @@ menu = [[i,t,int(agg.at[t,'nCandidates']) if t in agg.index else 0, f"{agg.at[t,
         for i,t in enumerate(all_tags)]
 print(tabulate(menu, headers=['#','tag','nEvents generated','nEvents15y'], tablefmt='rounded_grid', floatfmt='.3f'))
 print()
+"""
 # prompt
 try:
     choice = input('Enter tag number (blank to exit): ').strip()
@@ -175,3 +238,4 @@ else:
     print(tabulate(sel.values.tolist(), headers=['job','nEvents','nEvents15y'], tablefmt='rounded_grid', floatfmt='.3f'))
 
 #---------------------------------------------------------------------------------------------------------------------------------------
+"""

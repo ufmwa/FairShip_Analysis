@@ -1,6 +1,7 @@
 executable          	= condor_neuDIS.sh
 transfer_output_files 	= ""
-arguments             	= $(ClusterId) $(ProcId) $(Runnumber)
+#arguments             	= $(ClusterId) $(ProcId) $(Runnumber)
+arguments              = $(ClusterId) $(ProcId) $(R1) $(R2) $(R3) $(R4) $(R5)
 notify_user				= anupama.reghunath@hu-berlin.de
 notification 			= Error
 
@@ -18,4 +19,5 @@ requirements     		= Machine =!= LastRemoteHost
 ##############################################################################################################
 +JobFlavour="longlunch"
 ##############################################################################################################
-queue Runnumber from joblists_neuDIS_ECN3_2024.csv
+#queue Runnumber from joblists_neuDIS_ECN3_2024.csv
+queue R1,R2,R3,R4,R5 from joblists_neuDIS_ECN3_2024_runs5.whitespace

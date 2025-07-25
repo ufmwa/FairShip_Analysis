@@ -10,6 +10,16 @@ import yaml
 from ShipGeoConfig import AttrDict
 from tabulate import tabulate
 import geomGeant4
+from array import array
+import joblib
+import torch
+from sbtveto.model.nn_model import NN
+from sbtveto.util.inference import nn_output
+from sbtveto.model.gnn_model import EncodeProcessDecode
+from sbtveto.util.inference import gnn_output_binary,gnn_output_binary_wdeltaT
+#from torch_geometric.data import Data
+
+
 
 class AnalysisContext:
     def __init__(self, tree, geo_file):
@@ -88,9 +98,12 @@ class selection_check:
         self.ship_geo         = ctx.ship_geo
         self.veto_geo         = ctx.veto_geo
 
-    def define_candidate_time(self, candidate):
+
+    def define_candidate_time(self, candidate,offset=0):
         """Calculate time associated with the candidate decay vertex using strawtubes MCPoint info."""
+
         t0 = self.tree.ShipEventHeader.GetEventTime()
+
         candidate_pos = ROOT.TVector3()
         candidate.GetVertex(candidate_pos)
 
@@ -125,7 +138,7 @@ class selection_check:
 
             time_vtx_from_strawhits.append(t_vertex)
 
-        t_vtx = np.average(time_vtx_from_strawhits) + t0
+        t_vtx = np.average(time_vtx_from_strawhits) + t0 + offset
 
         return t_vtx  # units in ns
 
@@ -311,11 +324,11 @@ class selection_check:
         d2_pdg=d2_mc.GetPdgCode()
         
         
+
         LEPTON_PDGS = {11, 13}      # 11 = electron, 13 = muon
 
-        d1_is_lepton = d1_pdg in LEPTON_PDGS
-        d2_is_lepton = d2_pdg in LEPTON_PDGS
-
+        d1_is_lepton = abs(d1_pdg) in LEPTON_PDGS
+        d2_is_lepton = abs(d2_pdg) in LEPTON_PDGS
 
         if d1_is_lepton and d2_is_lepton:
             return 1                      # dileptonic
@@ -324,7 +337,7 @@ class selection_check:
         else:
             return 0                      # hadronic
 
-    def preselection_cut(self, candidate, IP_cut=250, show_table=False):
+    def preselection_cut(self, candidate, IP_cut=250, show_table=False,offset=None):
         """
         Umbrella method to apply the pre-selection cuts on the candidate.
 
@@ -361,7 +374,7 @@ class selection_check:
                 ],
                 [
                     "Time @ decay vertex (ns)",
-                    self.define_candidate_time(candidate),
+                    self.define_candidate_time(candidate,offset),
                     "",
                     "",
                 ],
@@ -544,8 +557,17 @@ class veto_tasks():
         self.sigma_t_SBThit=1.0              #(ns)
         self.sel = selection_check(ctx)
         
-
-    def SBT_decision(self,mcParticle=None,detector='liquid',threshold=45,advSBT=None,candidate=None):
+    def SBTcell_map(self): #provides a cell map with index in [0,nCells] for each cell.
+       fGeo = ROOT.gGeoManager
+       detList = {}
+       LiSC = fGeo.GetTopVolume().GetNode('DecayVolume_1').GetVolume().GetNode('T2_1').GetVolume().GetNode('VetoLiSc_0')
+       index = -1
+       for LiSc_cell in LiSC.GetVolume().GetNodes():
+          index += 1
+          name = LiSc_cell.GetName()
+          detList[index] = name[-6:]
+       return detList
+    def SBT_decision(self,mcParticle=None,detector='liquid',threshold=45,advSBT=None,candidate=None,offset=0,Digi_SBTHits=None):
         # if mcParticle >0, only count hits with this particle
         # if mcParticle <0, do not count hits with this particle
         ################################
@@ -560,9 +582,9 @@ class veto_tasks():
 
         fireddetID_list={}
         digihit_index={}
-
-        for aDigi in self.tree.Digi_SBTHits:
-         
+        if Digi_SBTHits==None:
+            Digi_SBTHits=self.tree.Digi_SBTHits
+        for aDigi in Digi_SBTHits:        
          index+=1 
          detID    = aDigi.GetDetectorID()
          fireddetID_list[str(aDigi.GetDetectorID())]=aDigi
@@ -580,7 +602,7 @@ class veto_tasks():
          ELoss    = aDigi.GetEloss()
          if advSBT:
              if candidate==None:candidate=self.tree.Particles[0]
-             self.t_vtx =self.define_t_vtx(candidate)  
+             self.t_vtx =self.sel.define_candidate_time(candidate,offset)  # already in ns
              if ELoss>=threshold*0.001 and self.advSBT_Veto_criteria_check(aDigi,threshold_val=threshold): hitSegments.append(index)#hitSegments+= 1   #does the SBT cell pass the 3 criteria:     
 
          else:
@@ -702,7 +724,7 @@ class veto_tasks():
 
         return hits_in_tol, xs, ys, zs
 
-    def pointing_to_vertex(self,candidate=None,Digi_SBTHits=None,threshold=45,time_window_ns=3,t_vtx=None):
+    def pointing_to_vertex(self,candidate=None,Digi_SBTHits=None,threshold=45,time_window_ns=3,t_vtx=None,offset=0):
          
         if candidate==None:
             candidate=self.tree.Particles[0]
@@ -714,7 +736,7 @@ class veto_tasks():
             Digi_SBTHits=self.tree.Digi_SBTHits
         
         if t_vtx==None:
-            t_vtx = self.sel.define_candidate_time(candidate)  # already in ns
+            t_vtx = self.sel.define_candidate_time(candidate,offset)  # already in ns
         
         matched=[]
         
@@ -735,6 +757,141 @@ class veto_tasks():
             return matched, True            
 
         return matched, False            
+
+    def Veto_decision_GNNbinary(self,
+                            mcParticle=None,
+                            detector='liquid',
+                            candidate=None,
+                            threshold=0.6,Digi_SBTHits=None):
+        """
+        Binary SBT veto: returns (veto, P(background)).
+        """
+
+        # ---------- copy–paste from the old 3-class code ------------------
+        self.inputmatrix = []
+
+        XYZ = np.load("/afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/sbtveto_william/data/SBT_new_geo_XYZ.npy")   # 854-cell geometry
+        model = EncodeProcessDecode(
+            mlp_output_size=8,
+            global_op=1,          # ONE output !
+            num_blocks=4)
+
+        # load weights once
+        if not hasattr(self, "_gnn_bin_loaded"):
+            model.load_state_dict(
+                torch.load("/afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/sbtveto_william/data/GNN_SBTveto_BINARY_45MeV_25epochs.pth",
+                           map_location="cpu"))
+            model.eval()
+            self._gnn_bin_loaded = model
+        else:
+            model = self._gnn_bin_loaded
+        # ---------------------------------------------------------------
+
+        detList = self.SBTcell_map()
+        energy_array = np.zeros(854, dtype=np.float32)        # 854 cells
+        if Digi_SBTHits==None:
+            Digi_SBTHits=self.tree.Digi_SBTHits
+        for aDigi in Digi_SBTHits:
+            detID = str(aDigi.GetDetectorID())
+            idx   = [i for i, v in detList.items() if v == detID][0]
+            if idx < 854:
+                energy_array[idx] = aDigi.GetEloss()
+
+        if candidate is None:
+            candidate = self.tree.Particles[0]
+
+        cand_pos = ROOT.TLorentzVector()
+        candidate.ProductionVertex(cand_pos)
+        vertexposition = np.array(
+            [cand_pos.X(), cand_pos.Y(), cand_pos.Z()], dtype=np.float32)
+
+        self.inputmatrix.append(np.concatenate((energy_array, vertexposition)))
+        self.inputmatrix = np.array(self.inputmatrix, dtype=np.float32)
+
+        # ---------- one-line binary inference ----------------------------
+        veto, prob_bg = gnn_output_binary(model, self.inputmatrix, XYZ, threshold)
+        return veto, prob_bg
+
+    def Veto_decision_GNNbinary_wdeltaT(self,
+                                mcParticle=None,
+                                detector='liquid',
+                                candidate=None,
+                                threshold=0.6,offset=0,Digi_SBTHits=None):
+        """
+        Binary SBT veto: returns (veto, P(background)) using energy, deltaT, vertex info.
+        """
+
+        # --- Geometry ---
+        XYZ = np.load("/afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/sbtveto_william/data/SBT_new_geo_XYZ.npy")   # (3, 854)
+        
+        # --- Load Model ---
+        model = EncodeProcessDecode(
+            mlp_output_size=8,
+            global_op=1,
+            num_blocks=4
+        )
+
+        if not hasattr(self, "_gnn_bin_loaded"):
+            model.load_state_dict(torch.load("/afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/sbtveto_william/data/GNN_SBTveto_BINARY_45MeV_25epochs_wdeltaT.pth", map_location="cpu"))
+            model.eval()
+            self._gnn_bin_loaded = model
+        else:
+            model = self._gnn_bin_loaded
+
+        # --- Prepare Input Features ---
+        detList = self.SBTcell_map()
+        energy_array = np.zeros(854, dtype=np.float32)
+        delta_t      = np.full(854, -9999.0, dtype=np.float32)
+
+        if Digi_SBTHits==None:
+            Digi_SBTHits=self.tree.Digi_SBTHits
+        for aDigi in Digi_SBTHits:
+            detID = str(aDigi.GetDetectorID())
+            idx   = [i for i, v in detList.items() if v == detID][0]
+            if idx < 854:
+                energy_array[idx] = aDigi.GetEloss()
+                delta_t[idx] = aDigi.GetTDC()
+
+        # --- Candidate vertex info ---
+        if candidate is None:
+            candidate = self.tree.Particles[0]
+        
+        cand_pos = ROOT.TLorentzVector()
+        candidate.ProductionVertex(cand_pos)
+        vertex_time = self.sel.define_candidate_time(candidate,offset)  # already in ns
+        vertex_xyz  = np.array([cand_pos.X(), cand_pos.Y(), cand_pos.Z()], dtype=np.float32)
+
+        # --- Δt = hit_time - vertex_time ---
+        delta_t = delta_t - vertex_time
+
+        # --- Apply energy and Δt masking (threshold in MeV) ---
+        threshold_MeV = 45
+        low_energy_mask = energy_array < (threshold_MeV * 1e-3)
+        bad_deltat_mask = (delta_t < -150) | (delta_t > 150)
+
+        invalid_mask = low_energy_mask | bad_deltat_mask
+        energy_array[invalid_mask] = 0.0
+        delta_t[invalid_mask]      = -9999
+
+        # --- Check if any valid cell remains ---
+        if not np.any(energy_array > 0.0):
+            print("\t\tNo fired cell → classify as signal and return")
+            return False, 0.0
+
+        # --- Construct (854, 6) input matrix: energy, deltaT, vertexX/Y/Z ---
+        features = np.stack([
+            energy_array,
+            delta_t,
+            np.full(854, vertex_xyz[0], dtype=np.float32),
+            np.full(854, vertex_xyz[1], dtype=np.float32),
+            np.full(854, vertex_xyz[2], dtype=np.float32)
+        ], axis=1)  # shape: (854, 5)
+
+        inputmatrix = features[np.newaxis, :, :]  # shape: (1, 854, 5)
+
+        # --- Run binary GNN decision ---
+        veto, prob_bg = gnn_output_binary_wdeltaT(model, inputmatrix, XYZ, threshold)
+        return veto, prob_bg
 
 
 class weights_calc():

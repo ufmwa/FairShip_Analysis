@@ -7,9 +7,14 @@ JOB=$3
 
 #######################################################################################
 source /cvmfs/ship.cern.ch/24.10/setUp.sh 
+
+export PYTHONPATH=/eos/experiment/ship/user/anupamar/NN_data/ext_pkgs:$PYTHONPATH
+echo "Extra packages ready from eos"
+
 source /afs/cern.ch/user/a/anupamar/HTCondor/configfiles/config_ECN3_2024.sh #alienv load FairShip/latest-master-release > config_<version>.sh
 echo 'config sourced'
 #######################################################################################
+
 
 python /afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/run_partialreco.py -i "$JOB"
 

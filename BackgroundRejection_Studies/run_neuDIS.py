@@ -112,4 +112,4 @@ known, rest = p.parse_known_args(sys.argv[1:])
 
 # Pass the parsed path plus any *remaining* CLI args to the core.
 sys.argv = [sys.argv[0], *rest, "-p", known.path]
-main(IP_CUT=10,weight_function=calcweight_neuDIS) #no need to pass TDC correction anymore!
+main(IP_CUT=250,weight_function=calcweight_neuDIS) #no need to pass TDC correction anymore!

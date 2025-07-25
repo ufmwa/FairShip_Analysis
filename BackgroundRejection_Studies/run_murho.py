@@ -2,14 +2,14 @@
 """Wrapper Script to run selection checks on Fully recon. samples (EventCalc)."""
 
 #-----------------------------------------------------------------------------------------------------------
-from selectioncheck import main
+from selectioncheck_leptonrho import main
 import sys, argparse
 import os,ROOT
 import pandas as pd
 import shipunit as u
 import numpy as np
 p = argparse.ArgumentParser(description=__doc__)
-p.add_argument("-p", "--path", default="/eos/experiment/ship/user/anupamar/Signal_EventCalc/2muv/12946374/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01",help="Path to simulation file") #mumunu 1 GeV
+p.add_argument("-p", "--path", default="/eos/experiment/ship/user/anupamar/Signal_EventCalc/2pimu/12968089/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01",help="Path to simulation file") #mumunu 1 GeV
 
 known, rest = p.parse_known_args(sys.argv[1:])
 

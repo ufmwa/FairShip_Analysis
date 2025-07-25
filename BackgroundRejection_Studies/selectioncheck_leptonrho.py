@@ -206,10 +206,10 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
     for c in cats:
         
         hist_dict[c]={}
-        ut.bookHist(hist_dict[c], f"{c}_rho_l", "rho_l" , 1000, 0, 1000)
         
-        pre = f"{c}_(preselection+UBT+[AdvSBT + GNNSBT ]@45MeV+PID+inv_mass)_"
+        pre = f"{c}_"
         
+        ut.bookHist(hist_dict[c], pre +"rho_l", "rho_l" , 1000, 0, 1000)
         ut.bookHist(hist_dict[c], pre +"candidate_time","candidate time @ decay vertex; ns",300,0, 300)
         ut.bookHist(hist_dict[c], pre +"impact_parameter", "Impact parameter; cm", 500, 0, 500)
         ut.bookHist(hist_dict[c], pre +"dist_to_innerwall", "Distance to inner wall; cm", 200, 0, 100)
@@ -220,29 +220,6 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
         ut.bookHist(hist_dict[c], pre +"d_mom", "momentum of daughters; d1 (GeV); d2 (GeV)",400,0,400,400,0,400)
         ut.bookHist(hist_dict[c], pre +"nDOF", "nDOF; d1; d2", 30, 0, 30, 30, 0, 30)
         ut.bookHist(hist_dict[c], pre +"chi2nDOF", "chi2nDOF; d1; d2", 10, 0, 10, 10, 0, 10)
-        
-        ut.bookHist(hist_dict[c], pre +"unweighted_x_pos", "Candidate x pos; cm", 300, -300, 300)
-        ut.bookHist(hist_dict[c], pre +"unweighted_y_pos", "Candidate y pos; cm", 300, -300, 300)
-        ut.bookHist(hist_dict[c], pre +"unweighted_z_pos", "Candidate z pos; cm", 3000, -3000, 3000)
-        ut.bookHist(hist_dict[c], pre +"nSBThits", "nSBThits>45MeV for events passing selection; nSBThits; ",100,0,100)
-
-        pre = f"{c}_(preselection+UBT+BasicSBT@45MeV+PID+inv_mass)_"
-
-        ut.bookHist(hist_dict[c], pre +"candidate_time","candidate time @ decay vertex; ns",300,0, 300)
-        ut.bookHist(hist_dict[c], pre +"impact_parameter", "Impact parameter; cm", 500, 0, 500)
-        ut.bookHist(hist_dict[c], pre +"dist_to_innerwall", "Distance to inner wall; cm", 200, 0, 100)
-        ut.bookHist(hist_dict[c], pre +"dist_to_vesselentrance","Distance to Decay Vessel Entrance; cm", 500, 0,5000)
-        ut.bookHist(hist_dict[c], pre +"inv_mass", "Invariant mass; GeV", 500, 0, 5)
-        ut.bookHist(hist_dict[c], pre +"DOCA", "Distance of closest approach; cm", 1000, 0, 10)
-        ut.bookHist(hist_dict[c], pre +"len_Particles", "len(tree.Particles); Number of candidates per event", 5,0,5)
-        ut.bookHist(hist_dict[c], pre +"d_mom", "momentum of daughters; d1 (GeV); d2 (GeV)",400,0,400,400,0,400)
-        ut.bookHist(hist_dict[c], pre +"nDOF", "nDOF; d1; d2", 30, 0, 30, 30, 0, 30)
-        ut.bookHist(hist_dict[c], pre +"chi2nDOF", "chi2nDOF; d1; d2", 10, 0, 10, 10, 0, 10)
-        
-        ut.bookHist(hist_dict[c], pre +"unweighted_x_pos", "Candidate x pos; cm", 300, -300, 300)
-        ut.bookHist(hist_dict[c], pre +"unweighted_y_pos", "Candidate y pos; cm", 300, -300, 300)
-        ut.bookHist(hist_dict[c], pre +"unweighted_z_pos", "Candidate z pos; cm", 3000, -3000, 3000)
-        
 
 
     for event_nr, event in enumerate(tree):
@@ -288,6 +265,22 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
             if cat=="all":
                 other_ip.add(ip_elem)
 
+            for c in {"all", cat}:
+                pre = f"{c}_"
+
+                hist_dict[c][pre+"impact_parameter"        ].Fill(selection.impact_parameter(signal),event_weight)   
+                hist_dict[c][pre+"dist_to_innerwall"       ].Fill(selection.dist_to_innerwall(signal),event_weight)
+                hist_dict[c][pre+"dist_to_vesselentrance"  ].Fill(selection.dist_to_vesselentrance(signal),event_weight)
+                hist_dict[c][pre+"DOCA"                    ].Fill(selection.DOCA(signal),event_weight)
+                hist_dict[c][pre+"len_Particles"           ].Fill(len(tree.Particles),event_weight)
+                hist_dict[c][pre+"d_mom"                   ].Fill(*selection.daughtermomentum(signal),event_weight)
+                hist_dict[c][pre+"nDOF"                    ].Fill(*selection.nDOF(signal),event_weight)
+                hist_dict[c][pre+"chi2nDOF"                ].Fill(*selection.chi2nDOF(signal),event_weight)
+                hist_dict[c][pre+"inv_mass"                ].Fill(selection.invariant_mass(signal),event_weight)
+                #if fix_candidatetime:
+                    #offset=fix_candidatetime(event)
+                    #hist_dict[c][pre+"candidate_time"          ].Fill(selection.define_candidate_time(signal),event_weight,offset)
+                #else:
                 
             #--------------------------Preselection---------------------------------
 
@@ -405,8 +398,8 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
 
             pid= selection.pid_decision(candidate=signal)
 
-            if IP_CUT > 10*u.cm:   pid_pass  = (pid==1 or pid==3)   #dileptonic final state
-            elif IP_CUT <= 10*u.cm:  pid_pass  = (pid==2 or pid==3) #fully recon. final state
+            #if IP_CUT > 10*u.cm:   pid_pass  = (pid==1 or pid==3)   #dileptonic final state
+            pid_pass  = (pid==2 or pid==3) #semileptonic. final state
 
             selection_list['PID']   = pid_pass
             
@@ -486,56 +479,6 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
             selection_list['preselection+'        + 'TOFSBT@45MeV'                      ]   = selection_list['preselection']                           and selection_list['TOFSBT@45MeV']
             selection_list['preselection+'        + 'TOFSBT@90MeV'                      ]   = selection_list['preselection']                           and selection_list['TOFSBT@90MeV']
 
-            #-------------------------------------------------------------------------
-
-            for c in {"all", cat}:
-                
-                if selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + GNNSBT ]@45MeV+ '   +'PID+'+'inv_mass']==True:
-                
-                    pre = f"{c}_(preselection+UBT+[AdvSBT + GNNSBT ]@45MeV+PID+inv_mass)_"
-
-                    hist_dict[c][pre+"impact_parameter"        ].Fill(selection.impact_parameter(signal),event_weight)   
-                    hist_dict[c][pre+"dist_to_innerwall"       ].Fill(selection.dist_to_innerwall(signal),event_weight)
-                    hist_dict[c][pre+"dist_to_vesselentrance"  ].Fill(selection.dist_to_vesselentrance(signal),event_weight)
-                    hist_dict[c][pre+"DOCA"                    ].Fill(selection.DOCA(signal),event_weight)
-                    hist_dict[c][pre+"len_Particles"           ].Fill(len(tree.Particles),event_weight)
-                    hist_dict[c][pre+"d_mom"                   ].Fill(*selection.daughtermomentum(signal),event_weight)
-                    hist_dict[c][pre+"nDOF"                    ].Fill(*selection.nDOF(signal),event_weight)
-                    hist_dict[c][pre+"chi2nDOF"                ].Fill(*selection.chi2nDOF(signal),event_weight)
-                    hist_dict[c][pre+"inv_mass"                ].Fill(selection.invariant_mass(signal),event_weight)
-                    
-                    signal_pos = ROOT.TLorentzVector()
-                    signal.ProductionVertex(signal_pos)
-                    hist_dict[c][pre+"unweighted_z_pos"                   ].Fill(signal_pos.Z())
-                    hist_dict[c][pre+"unweighted_x_pos"                   ].Fill(signal_pos.X())
-                    hist_dict[c][pre+"unweighted_y_pos"                   ].Fill(signal_pos.Y())
-                    
-                    hist_dict[c][pre+"nSBThits"                   ].Fill(len(HitsSBT45))                
-                
-                if selection_list['preselection+'+ 'UBT+'+ 'BasicSBT@45MeV+'+'PID+'+'inv_mass' ]==True:
-                
-                    pre = f"{c}_(preselection+UBT+BasicSBT@45MeV+PID+inv_mass)_"
-
-                    hist_dict[c][pre+"impact_parameter"        ].Fill(selection.impact_parameter(signal),event_weight)   
-                    hist_dict[c][pre+"dist_to_innerwall"       ].Fill(selection.dist_to_innerwall(signal),event_weight)
-                    hist_dict[c][pre+"dist_to_vesselentrance"  ].Fill(selection.dist_to_vesselentrance(signal),event_weight)
-                    hist_dict[c][pre+"DOCA"                    ].Fill(selection.DOCA(signal),event_weight)
-                    hist_dict[c][pre+"len_Particles"           ].Fill(len(tree.Particles),event_weight)
-                    hist_dict[c][pre+"d_mom"                   ].Fill(*selection.daughtermomentum(signal),event_weight)
-                    hist_dict[c][pre+"nDOF"                    ].Fill(*selection.nDOF(signal),event_weight)
-                    hist_dict[c][pre+"chi2nDOF"                ].Fill(*selection.chi2nDOF(signal),event_weight)
-                    hist_dict[c][pre+"inv_mass"                ].Fill(selection.invariant_mass(signal),event_weight)
-                    
-                    signal_pos = ROOT.TLorentzVector()
-                    signal.ProductionVertex(signal_pos)
-                    hist_dict[c][pre+"unweighted_z_pos"                   ].Fill(signal_pos.Z())
-                    hist_dict[c][pre+"unweighted_x_pos"                   ].Fill(signal_pos.X())
-                    hist_dict[c][pre+"unweighted_y_pos"                   ].Fill(signal_pos.Y())
-                    #if fix_candidatetime:
-                        #offset=fix_candidatetime(event)
-                        #hist_dict[c][pre+"candidate_time"          ].Fill(selection.define_candidate_time(signal),event_weight,offset)
-                    #else:
-                
             #-------------------------------------------------------------------------
 
             for selection_name, passed in selection_list.items():
