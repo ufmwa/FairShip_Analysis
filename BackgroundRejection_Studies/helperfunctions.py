@@ -12,12 +12,55 @@ from tabulate import tabulate
 import geomGeant4
 from array import array
 import joblib
-import torch
-from sbtveto.model.nn_model import NN
-from sbtveto.util.inference import nn_output
-from sbtveto.model.gnn_model import EncodeProcessDecode
-from sbtveto.util.inference import gnn_output_binary,gnn_output_binary_wdeltaT
+HAVE_TORCH = True
+try:
+    import torch
+    from sbtveto.model.nn_model import NN
+    from sbtveto.util.inference import nn_output
+    from sbtveto.model.gnn_model import EncodeProcessDecode
+    from sbtveto.util.inference import gnn_output_binary, gnn_output_binary_wdeltaT
+except Exception:
+    HAVE_TORCH = False
+    torch = None
+    NN = None
+    nn_output = None
+    EncodeProcessDecode = None
+    gnn_output_binary = None
+    gnn_output_binary_wdeltaT = None
 #from torch_geometric.data import Data
+
+
+ASSUME_PID_100 = True
+
+
+def _infer_medium(ship_geo):
+    # 1) Klassisches Feld
+    if hasattr(ship_geo, "DecayVolumeMedium"):
+        return ship_geo.DecayVolumeMedium
+    # 2) Mögliche neue/nestede Felder
+    candidates_lvl1 = ["VesselCfg", "Vessel", "decayVolume", "DecayVolume"]
+    keys = ["decayMedium", "medium", "Medium", "material", "Material"]
+    for c in candidates_lvl1:
+        cfg = getattr(ship_geo, c, None)
+        if cfg:
+            for k in keys:
+                val = getattr(cfg, k, None)
+                if isinstance(val, str) and val:
+                    return val
+    # 3) Fallback über Geometrie-Material
+    try:
+        import ROOT
+        gm = ROOT.gGeoManager
+        vol = None
+        for name in ("DecayVolume", "TrkExt", "TrkExtUp"):
+            v = gm.FindVolumeFast(name) if gm else None
+            if v:
+                vol = v
+                break
+        mat = vol.GetMedium().GetMaterial().GetName() if (vol and vol.GetMedium()) else ""
+        return "helium" if "he" in str(mat).lower() else "vacuum"
+    except Exception:
+        return "vacuum"
 
 
 
@@ -29,23 +72,27 @@ class AnalysisContext:
         #Initialize geometry configuration.
         self.geometry_manager = geo_file.Get("FAIRGeom")
 
-        
+
         unpickler = Unpickler(geo_file)
         self.ship_geo = unpickler.load("ShipGeo")
 
         fairship = ROOT.gSystem.Getenv("FAIRSHIP")
 
-        if self.ship_geo.DecayVolumeMedium == "helium":
+        medium = _infer_medium(self.ship_geo)
+        medium_lower = str(medium).lower()
+        self.heliumCase = medium_lower.startswith("he") or medium_lower == "helium"
+
+        if medium_lower.startswith("he"):
             with open(fairship + "/geometry/veto_config_helium.yaml") as file:
                 config = yaml.safe_load(file)
                 self.veto_geo = AttrDict(config)
-        
-        if self.ship_geo.DecayVolumeMedium == "vacuums":
+
+        if medium_lower.startswith("vac"):
             with open(fairship + "/geometry/veto_config_vacuums.yaml") as file:
                 config = yaml.safe_load(file)
                 self.veto_geo = AttrDict(config)
         
-        #medium   = self.ship_geo.DecayVolumeMedium
+        #medium   = medium
         #fn       = f"{fairship}/geometry/veto_config_{medium}.yaml"
         #with open(fn) as f:
         #    self.veto_geo = AttrDict(yaml.safe_load(f))
@@ -311,6 +358,16 @@ class selection_check:
                   3 = at least one track has unknown PID, #never used since truth
                   4 = fewer than two PID tracks available #two track candidates
         """
+        if ASSUME_PID_100:
+            return 3
+
+        try:
+            has_pid = bool(self.tree.GetBranch("Pid"))
+        except AttributeError:
+            has_pid = hasattr(self.tree, "Pid")
+
+        if not has_pid:
+            return 3
 
         if(len(self.tree.Pid)<2):
             print("Pid is less  than 2 particles!") #sanity check?
@@ -766,6 +823,8 @@ class veto_tasks():
         """
         Binary SBT veto: returns (veto, P(background)).
         """
+        if not HAVE_TORCH:
+            return False, None
 
         # ---------- copy–paste from the old 3-class code ------------------
         self.inputmatrix = []
@@ -820,6 +879,8 @@ class veto_tasks():
         """
         Binary SBT veto: returns (veto, P(background)) using energy, deltaT, vertex info.
         """
+        if not HAVE_TORCH:
+            return False, None
 
         # --- Geometry ---
         XYZ = np.load("/afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/sbtveto_william/data/SBT_new_geo_XYZ.npy")   # (3, 854)
