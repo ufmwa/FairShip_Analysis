@@ -28,9 +28,10 @@ def define_time_till_vtx(event):
 	
 	t_ns  = dist_from_target / v
 	# return the time taken for the particle to reach the X,YZ from the start point
+
 	return t_ns
 
-def define_weight_EventCalc(event,path=known.path):
+def define_weight_EventCalc(event,path=known.path,w_DIS=None): #w_DIS is kept to maintain the similiarity in code
 	
 	w_event=event.MCTrack[0].GetWeight()
 

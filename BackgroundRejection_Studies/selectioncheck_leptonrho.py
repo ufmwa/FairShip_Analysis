@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 import pathlib, datetime 
 import glob
+import math
+from array import array
 
 other_ip=set()
 
@@ -23,7 +25,7 @@ def dump_summary_csv(job_id,event_stats,pass_stats,out_dir= ".",**meta):
     baseline = dict(job=job_id,time=datetime.datetime.utcnow().isoformat(timespec="seconds"),**meta)
 
     def pack(tag, ev_map):
-        return {**baseline,"tag": tag,"nCandidates": len(ev_map),"nEvents15y": round(sum(ev_map.values()), 3)}
+        return {**baseline,"tag": tag,"nCandidates": len(ev_map),"nEvents15y": sum(ev_map.values())}
 
     rows = [pack(t, event_stats[t]) for t in ("simulated", "reconstructed")] \
          + [pack(t, m) for t, m in pass_stats.items()]
@@ -51,10 +53,85 @@ def fixwidth_tabulate(rows, headers, *, width=50, **kw):
                     headers=headers2,
                     **kw)
 
+def helium_rhoL(event, track_index=0,
+                rho_he=1.78e-4, tol=6e-5, eps=1e-4, max_hops=256):
+    """
+    Return helium-only rho*L (g/cm^2) for a DIS vertex in any DV shape.
+    Uses TGeoNavigator to follow the track in both directions from the vertex.
+    """
+
+    nav = ROOT.gGeoManager.GetCurrentNavigator()
+    if not nav:
+        raise RuntimeError("No TGeoNavigator; load geometry first.")
+
+    # --- get vertex & direction ---
+    v = ROOT.TVector3()
+    event.MCTrack[track_index].GetStartVertex(v)
+    xv, yv, zv = v.X(), v.Y(), v.Z()
+
+    px = event.MCTrack[track_index].GetPx()
+    py = event.MCTrack[track_index].GetPy()
+    pz = event.MCTrack[track_index].GetPz()
+    pm = math.sqrt(px*px + py*py + pz*pz) or 1.0
+    dx, dy, dz = px/pm, py/pm, pz/pm
+
+    # --- helper: is this point in helium? ---
+    def in_helium(x, y, z):
+        nav.SetCurrentPoint(x, y, z)
+        nav.FindNode()
+        node = nav.GetCurrentNode()
+        if not node: return False
+        try:
+            rho = node.GetMedium().GetMaterial().GetDensity()
+        except Exception:
+            return False
+        return abs(rho - rho_he) <= tol
+
+    # quick check that vertex is in helium (nudge if needed)
+    if not (in_helium(xv, yv, zv) or
+            in_helium(xv + dx*eps, yv + dy*eps, zv + dz*eps) or
+            in_helium(xv - dx*eps, yv - dy*eps, zv - dz*eps)):
+        return 0.0
+
+    # --- helper: integrate helium length from point along direction ---
+    def helium_len_from(x0, y0, z0, dx, dy, dz):
+        nav.SetCurrentPoint(x0 + dx*eps, y0 + dy*eps, z0 + dz*eps)
+        nav.SetCurrentDirection(dx, dy, dz)
+        nav.FindNode()
+        total, seen_he = 0.0, False
+        for _ in range(max_hops):
+            node = nav.GetCurrentNode()
+            if not node: break
+            try:
+                rho = node.GetMedium().GetMaterial().GetDensity()
+            except Exception:
+                rho = -1
+            in_he = abs(rho - rho_he) <= tol
+            nav.FindNextBoundaryAndStep()
+            step = nav.GetStep()
+            if in_he:
+                total += step
+                seen_he = True
+            elif seen_he:
+                break
+            if nav.IsOutside(): break
+            cp = nav.GetCurrentPoint()
+            nav.SetCurrentPoint(cp[0] + dx*eps, cp[1] + dy*eps, cp[2] + dz*eps)
+        return total
+
+    # --- integrate forward + backward from vertex ---
+    L_fwd = helium_len_from(xv, yv, zv,  dx,  dy,  dz)
+    L_bwd = helium_len_from(xv, yv, zv, -dx, -dy, -dz)
+    L_he  = L_fwd + L_bwd
+
+    return rho_he * L_he  # g/cm^2
+
 def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
     
     """Main function to analyse the selection efficiency of different cuts."""
-    
+    print(f"Partial Reco. (l ρ) channel Analysis starts now ")
+    print(f"IP_CUT set as [10,{IP_CUT})")
+
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("-p", "--path"  ,dest="path"         ,help="Path to simulation file",required=True)
     parser.add_argument("-i","--jobDir"  ,dest="jobDir"      ,help="job name of input file",  type=str,required=True)
@@ -179,6 +256,36 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
                         "preselection+UBT+AdvSBT@90MeV+inv_mass",
                         ]
     
+    COMBO_POS_TAGS = [
+
+        'preselection',
+        'preselection+BasicSBT@45MeV',
+        'preselection+AdvSBT@45MeV',
+        'preselection+[AdvSBT + GNNSBT ]@45MeV',  
+
+        'preselection+UBT',
+        'preselection+UBT+BasicSBT@45MeV',
+        'preselection+UBT+AdvSBT@45MeV',
+        'preselection+UBT+[AdvSBT + GNNSBT ]@45MeV',  
+
+
+        'preselection+PID',        
+        'preselection+BasicSBT@45MeV+PID',
+        'preselection+AdvSBT@45MeV+PID',
+        'preselection+[AdvSBT + GNNSBT ]@45MeV+ PID',  
+
+
+        'preselection+UBT+PID',        
+        'preselection+UBT+BasicSBT@45MeV+PID',
+        'preselection+UBT+AdvSBT@45MeV+PID',
+        'preselection+UBT+[AdvSBT + GNNSBT ]@45MeV+ PID',  
+
+        'preselection+UBT+BasicSBT@45MeV+PID+inv_mass',
+        'preselection+UBT+GNNSBT@45MeV+PID',
+        'preselection+UBT+GNNSBT@45MeV+PID+inv_mass',
+        'preselection+UBT+[AdvSBT + GNNSBT ]@45MeV+ PID+inv_mass',  
+    ]
+
     from itertools import chain
 
     ALL_TAGS = list(chain(
@@ -193,6 +300,34 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
     ))
 
     cats = ("all", "vesselCase", "heliumCase")
+    
+    #--------------------------------------------------------------------------------------------------------------
+
+    # Trees + branch buffers to store (x,y,z,w) for passing candidates
+    pos_trees = {c: {} for c in cats}
+    pos_bufs  = {c: {} for c in cats}
+
+    def _san(s):  # safe tree name
+        return s.replace('[','').replace(']','').replace(' ','').replace('+','_')
+
+    for c in cats:
+        for tag in COMBO_POS_TAGS:
+            tname = f"{c}_{_san(tag)}_pos"
+            t     = ROOT.TTree(tname, f"Candidate production positions for {tag} ({c})")
+            x = array('f', [0.0]); y = array('f', [0.0]); z = array('f', [0.0]); w = array('f', [0.0])
+            t.Branch("x", x, "x/F"); t.Branch("y", y, "y/F"); t.Branch("z", z, "z/F"); t.Branch("w", w, "w/F")
+            pos_trees[c][tag] = t
+
+            # ...inside the for c in cats / for tag in COMBO_POS_TAGS loop, after x,y,z,w...
+            ipx = array('f', [0.0]); ipy = array('f', [0.0]); ipz = array('f', [0.0])
+            t.Branch("IP_x", ipx, "IP_x/F")
+            t.Branch("IP_y", ipy, "IP_y/F")
+            t.Branch("IP_z", ipz, "IP_z/F")
+
+            # store them in the buffer map too
+            pos_bufs[c][tag]  = (x, y, z, w, ipx, ipy, ipz)
+
+    #--------------------------------------------------------------------------------------------------------------
 
     pass_stats = {
         c: defaultdict(lambda: {}, {t: {} for t in ALL_TAGS})
@@ -245,13 +380,18 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
 
         cat = ip_category(ip_elem)       # "all", "vesselCase", "heliumCase"
         # -----------------------------------------------------------------
+        if cat=='heliumCase':
+            corrected_rhoL= helium_rhoL(event)
+            event_weight = weight_function(event,w_DIS=corrected_rhoL)
+            rhoL=corrected_rhoL
+        else:
+            event_weight = weight_function(event)
+            rhoL=event.MCTrack[2].GetWeight()
 
-        event_weight = weight_function(event)
-    
         for c in {"all", cat}:
             pre = f"{c}_"
 
-            hist_dict[c][pre+"rho_l"].Fill(event.MCTrack[2].GetWeight())
+            hist_dict[c][pre+"rho_l"].Fill(rhoL)
     
             event_stats[c]["simulated"][event_nr] = event_weight
     
@@ -293,10 +433,10 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
             if selection.dist_to_innerwall(signal) > 5 * u.cm:
                 selection_list["dist2innerwall"] = True
                         
-            if selection.dist_to_vesselentrance(signal) > 100 * u.cm:
+            if selection.dist_to_vesselentrance(signal) > 20 * u.cm:
                 selection_list["dist2vesselentrance"] = True
 
-            if selection.impact_parameter(signal) < IP_CUT * u.cm:
+            if 10 * u.cm <= selection.impact_parameter(signal) < IP_CUT * u.cm:
                 selection_list["impact_par"] = True
 
             if selection.DOCA(signal) < 1 * u.cm:
@@ -321,7 +461,13 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
             #if pre_ok:
             #    print(f"Event:{event_nr} Candidate_index: {candidate_id_in_event} <--passes the pre-selection\n\n")
 
-            selection_list['preselection'] = pre_ok
+            selection_list['GoodDaughters']                                                  = selection_list["n_dof"] and selection_list["reduced_chi2"] and selection_list["d_mom"]
+            selection_list['GoodDaughters'+'+n_particles']                                   = selection_list['GoodDaughters'] and selection_list["n_particles"]
+            selection_list['GoodDaughters'+'+n_particles'+'+fiducial']                       = selection_list['GoodDaughters'] and selection_list["n_particles"] and selection_list["fiducial"] and selection_list["dist2innerwall"] and selection_list["dist2vesselentrance"]
+            selection_list['GoodDaughters'+'+n_particles'+'+fiducial'+'+doca']               = selection_list['GoodDaughters'] and selection_list["n_particles"] and selection_list["fiducial"] and selection_list["dist2innerwall"] and selection_list["dist2vesselentrance"] and selection_list["doca"]
+            selection_list['GoodDaughters'+'+n_particles'+'+fiducial'+'+doca'+'+impact_par'] = selection_list['GoodDaughters'] and selection_list["n_particles"] and selection_list["fiducial"] and selection_list["dist2innerwall"] and selection_list["dist2vesselentrance"] and selection_list["doca"] and selection_list["impact_par"]        
+
+            selection_list['preselection'] = pre_ok and selection_list["impact_par"] #ensure IP between [10, 250)
 
             #-------------------------------------------------------------------------
             #-------------------------Veto Decisions----------------------------------
@@ -399,9 +545,24 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
             pid= selection.pid_decision(candidate=signal)
 
             #if IP_CUT > 10*u.cm:   pid_pass  = (pid==1 or pid==3)   #dileptonic final state
-            pid_pass  = (pid==2 or pid==3) #semileptonic. final state
+            
+            pid_pass  = (int(pid)==2 or int(pid)==3)   #semi leptonic. final state
 
             selection_list['PID']   = pid_pass
+            
+            selection_list['PID_leptonic']          = (int(pid)==1 or int(pid)==3)
+            selection_list['PID_semileptonic']      = (int(pid)==2 or int(pid)==3)
+            
+            selection_list['PID_ee']                = pid==1.1 or int(pid)==3
+            selection_list['PID_mumu']              = pid==1.2 or int(pid)==3
+            
+            selection_list['PID_semileptonic_e']    = pid==2.1 or int(pid)==3
+            selection_list['PID_semileptonic_mu']   = pid==2.2 or int(pid)==3
+
+            selection_list['preselection'+'PID_ee']             = selection_list['preselection'] and selection_list['PID_ee']
+            selection_list['preselection'+'PID_mumu']           = selection_list['preselection'] and selection_list['PID_mumu']
+            selection_list['preselection'+'PID_semileptonic_e'] = selection_list['preselection'] and selection_list['PID_semileptonic_e']
+            selection_list['preselection'+'PID_semileptonic_mu']= selection_list['preselection'] and selection_list['PID_semileptonic_mu']
             
             #--------------------------------Combined Cuts-----------------------------------------            
             
@@ -415,8 +576,10 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
             selection_list['UBT+'+ 'TOFSBT@90MeV'   ]   =   selection_list['UBT'] and selection_list['TOFSBT@90MeV']      
 
 
-            selection_list['preselection+'+ 'UBT']   = selection_list['preselection'] and selection_list['UBT']
+            selection_list['preselection+'+ 'UBT'         ]   = selection_list['preselection'] and selection_list['UBT']            
             
+            selection_list['GoodDaughters'+'+n_particles'+'+fiducial'+'+doca'+'+impact_par'+'+UBT'] = selection_list['GoodDaughters'] and selection_list["n_particles"] and selection_list["fiducial"] and selection_list["doca"] and selection_list["impact_par"]  and selection_list['UBT'] and selection_list["dist2innerwall"] and selection_list["dist2vesselentrance"]
+
             #--Basic@45--
             selection_list['preselection+'+ 'UBT+'+ 'BasicSBT@45MeV'                    ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['BasicSBT@45MeV']
             selection_list['preselection+'+ 'UBT+'+ 'BasicSBT@45MeV+'+'PID'             ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['BasicSBT@45MeV']  and selection_list['PID']
@@ -452,13 +615,18 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
             selection_list['preselection+'+ 'UBT+'+ 'GNNSBT@45MeV+'   +'PID'            ]   = selection_list['preselection'] and selection_list['UBT'] and selection_list['GNNSBT@45MeV']    and selection_list['PID']
             selection_list['preselection+'+ 'UBT+'+ 'GNNSBT@45MeV+'   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and selection_list['GNNSBT@45MeV']    and selection_list['PID']  and selection_list['inv_mass']
 
+            #--noUBT used--
+            selection_list['preselection+'                                      +'PID'  ]   = selection_list['preselection']                                                                                                   and selection_list['PID']
+            selection_list['preselection+'        + 'AdvSBT@45MeV+'             +'PID'  ]   = selection_list['preselection']                           and selection_list['AdvSBT@45MeV']                                      and selection_list['PID']
+            selection_list['preselection+'        + 'AdvSBT@90MeV+'             +'PID'  ]   = selection_list['preselection']                           and selection_list['AdvSBT@90MeV']                                      and selection_list['PID']
+            selection_list['preselection+'        + '[AdvSBT + GNNSBT ]@45MeV+ ' +'PID' ]   = selection_list['preselection']                           and (selection_list['AdvSBT@45MeV'] and selection_list['GNNSBT@45MeV']) and selection_list['PID']
+
             # other cuts as backup info
-            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + TOFSBT ]@45MeV+ '   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@45MeV'] and selection_list['TOFSBT@45MeV'])   and selection_list['PID']  and selection_list['inv_mass']
-            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + TOFSBT ]@90MeV+ '   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@90MeV'] and selection_list['TOFSBT@90MeV'])   and selection_list['PID']  and selection_list['inv_mass']
-            
-            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + GNNSBT ]@45MeV']               = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@45MeV'] and selection_list['GNNSBT@45MeV'])
-            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + GNNSBT ]@45MeV+ '   +'PID']               = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@45MeV'] and selection_list['GNNSBT@45MeV'])   and selection_list['PID']
-            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + GNNSBT ]@45MeV+ '   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@45MeV'] and selection_list['GNNSBT@45MeV'])   and selection_list['PID']  and selection_list['inv_mass']
+            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + TOFSBT ]@45MeV+ '   +'PID+'+'inv_mass'   ]   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@45MeV'] and selection_list['TOFSBT@45MeV'])   and selection_list['PID']  and selection_list['inv_mass']
+            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + TOFSBT ]@90MeV+ '   +'PID+'+'inv_mass'   ]   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@90MeV'] and selection_list['TOFSBT@90MeV'])   and selection_list['PID']  and selection_list['inv_mass']
+            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + GNNSBT ]@45MeV'                          ]   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@45MeV'] and selection_list['GNNSBT@45MeV'])
+            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + GNNSBT ]@45MeV+ '   +'PID'               ]   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@45MeV'] and selection_list['GNNSBT@45MeV'])   and selection_list['PID']
+            selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + GNNSBT ]@45MeV+ '   +'PID+'+'inv_mass'   ]   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@45MeV'] and selection_list['GNNSBT@45MeV'])   and selection_list['PID']  and selection_list['inv_mass']
             #selection_list['preselection+'+ 'UBT+'+ '[AdvSBT + GNNSBT ]@90MeV+ '   +'PID+'+'inv_mass']   = selection_list['preselection'] and selection_list['UBT'] and (selection_list['AdvSBT@90MeV'] and selection_list['GNNSBT@90MeV'])    and selection_list['PID']  and selection_list['inv_mass']
 
             selection_list['preselection+'                                  +'inv_mass' ]   = selection_list['preselection']                                                                                            and selection_list['inv_mass']
@@ -478,6 +646,31 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
             selection_list['preselection+'        + 'AdvSBT@90MeV'                      ]   = selection_list['preselection']                           and selection_list['AdvSBT@90MeV']
             selection_list['preselection+'        + 'TOFSBT@45MeV'                      ]   = selection_list['preselection']                           and selection_list['TOFSBT@45MeV']
             selection_list['preselection+'        + 'TOFSBT@90MeV'                      ]   = selection_list['preselection']                           and selection_list['TOFSBT@90MeV']
+            selection_list['preselection+'        + '[AdvSBT + GNNSBT ]@45MeV'          ]   = selection_list['preselection']                           and (selection_list['AdvSBT@45MeV'] and selection_list['GNNSBT@45MeV'])
+            #-------------------------------------------------------------------------
+
+            #-------------------------------------------------------------------------
+            signal_pos = ROOT.TLorentzVector()
+            signal.ProductionVertex(signal_pos)
+            # record positions for any passing combination
+            for tag in COMBO_POS_TAGS:
+                if selection_list.get(tag, False):
+                    
+                    # true IP from earlier in the event loop
+                    ipx_val = interaction_point.X()
+                    ipy_val = interaction_point.Y()
+                    ipz_val = interaction_point.Z()
+
+                    for c2 in {"all", cat}:
+                        x, y, z, w, ipx, ipy, ipz = pos_bufs[c2][tag]
+                        x[0]   = signal_pos.X()
+                        y[0]   = signal_pos.Y()
+                        z[0]   = signal_pos.Z()
+                        w[0]   = event_weight
+                        ipx[0] = ipx_val
+                        ipy[0] = ipy_val
+                        ipz[0] = ipz_val
+                        pos_trees[c2][tag].Fill()
 
             #-------------------------------------------------------------------------
 
@@ -505,7 +698,7 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
         recon_table = fixwidth_tabulate(
                         rows_event_stats,     
                         headers=[" ", "  nEvents  ", "nEvents in 15 y"],
-                        floatfmt=".3f",
+                        floatfmt=".2e",
                         tablefmt="rounded_grid",
                     )
 
@@ -523,7 +716,7 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
         presel_table = fixwidth_tabulate(
                         rows_pass_stats_presel,
                         headers=["Pre-Selection Cut", "nCandidates", "nEvents in 15 y"],
-                        floatfmt=".3f", tablefmt="rounded_grid"
+                        floatfmt=".2e", tablefmt="rounded_grid"
                     )
 
         print(presel_table)
@@ -540,7 +733,7 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
         veto_table = fixwidth_tabulate(
             rows_pass_stats_vetosystems,
             headers=["Veto System",   "nCandidates", "nEvents in 15 y"],
-            floatfmt=".3f", tablefmt="rounded_grid"
+            floatfmt=".2e", tablefmt="rounded_grid"
         )
         
         print(veto_table)
@@ -571,12 +764,12 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
                 ev_map = pass_stats[cat].get(tag, {-99:-99})       # empty dict if tag never filled
                 n_ev   = len(ev_map)                          # how many distinct events
                 w_sum  = sum(ev_map.values())                 # total weighted events
-                rows.append([tag, n_ev, f"{w_sum:.3f}"])
+                rows.append([tag, n_ev, f"{w_sum:.2e}"])
 
             tbl = fixwidth_tabulate(
                 rows,
                 headers=[title, "nCandidates", "nEvents in 15 y"],
-                floatfmt=".3f",
+                floatfmt=".2e",
                 tablefmt="rounded_grid",
             )
             all_tables.append(tbl)
@@ -597,18 +790,24 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None):
 
         if fallback_tags:
             rows = [
-                [tag, len(pass_stats[cat][tag]), f"{sum(pass_stats[cat][tag].values()):.3f}"]
+                [tag, len(pass_stats[cat][tag]), f"{sum(pass_stats[cat][tag].values()):.2e}"]
                 for tag in sorted(fallback_tags)
             ]
             fallback_table=fixwidth_tabulate(rows,
                                   headers=["Other cuts ", "nCandidates", "nEvents in 15 y"],
-                                  floatfmt=".3f",
+                                  floatfmt=".2e",
                                   tablefmt="rounded_grid")
 
             print(fallback_table)
         #---------------------------------------------------------------------
         
         ut.writeHists(hist_dict[cat], f"selectionparameters_{cat}.root")
+
+        # append trees to the histogram file for this category
+        with ROOT.TFile(f"selectionparameters_{cat}.root", "UPDATE") as rf:
+            for tag, t in pos_trees[cat].items():
+                rf.cd()
+                t.Write()
 
         #dump_summary_csv(options.jobDir, event_stats, pass_stats,out_dir=".", ship_version="2024_helium")
     

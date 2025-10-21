@@ -27,8 +27,7 @@ if options.analysistype=="EMBG":
 
 if options.analysistype=="mupi":
 	options.filename="joblists_mupi_EventCalc_ECN3_2024.csv" 
-	inputDir_list=['/eos/experiment/ship/user/anupamar/Signal_EventCalc/mupi/12947081/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01']	
-
+	inputDir_list=["/eos/experiment/ship/user/anupamar/Signal_EventCalc/mupi/12968090/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01/"]	
 if options.analysistype=="2muv":
 	options.filename="joblists_2muv_EventCalc_ECN3_2024.csv" 
 	inputDir_list=["/eos/experiment/ship/user/anupamar/Signal_EventCalc/2muv/12946374/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01"]	

@@ -14,7 +14,7 @@ notification 			= Error
 on_exit_remove   		= (ExitBySignal == False) && (ExitCode == 0)
 max_retries      		= 3
 requirements     		= Machine =!= LastRemoteHost 
-
+max_materialize 		= 20
 ##############################################################################################################
 +JobFlavour="longlunch"
 ##############################################################################################################

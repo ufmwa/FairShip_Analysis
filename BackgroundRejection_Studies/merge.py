@@ -44,7 +44,7 @@ elif options.vesselCase:  keyword = "vesselCase"
 elif options.heliumCase:  keyword = "heliumCase"
 
 
-main_path='/eos/experiment/ship/user/anupamar/BackgroundStudies/'#backup_noPID'
+main_path='/eos/experiment/ship/user/anupamar/BackgroundStudies/corrected/'
 
 if options.muonDIS:
     pathlist = [
@@ -124,26 +124,29 @@ def fmt(value, denom, pct_fmt=".2f"):
         return f"{value:{'.2e'}} ({pct:{pct_fmt}} %)"
     return f"{value:{'.2e'}}"
 
-# load CSVs
-def load_csvs(pathlist, keyword):
 
-    csvs = [str(p) for base in pathlist for p in Path(base).glob(f"job_*/selection_summary_{keyword}*.csv")]
-    
-    if options.testing_code:         
-        csvs = csvs[:5]              #just take the first five
-    if not csvs: raise FileNotFoundError
-    valid_csvs = []
+def load_csvs(pathlist, keyword):
+    csvs = [p for base in pathlist
+                  for p in Path(base).glob(f"job_*/selection_summary_{keyword}*.csv")]
+
+    if not csvs:
+        raise FileNotFoundError(f"No CSVs matching {keyword!r} under {pathlist}")
+
+    frames = []
     for f in csvs:
         try:
-            valid_csvs.append(pd.read_csv(f))
-        except FileNotFoundError:
-            print(f"Warning: file not found, skipping → {f}")
-        except pd.errors.EmptyDataError:
-            print(f"Warning: empty or corrupted CSV, skipping → {f}")
+            frames.append(pd.read_csv(f))
+        except (FileNotFoundError, pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+            print(f"[warn] skipped {f}: {e}")
 
-    return pd.concat((pd.read_csv(f) for f in csvs), ignore_index=True)
+    if not frames:
+        raise ValueError("All discovered CSVs were empty or unreadable.")
+
+    return pd.concat(frames, ignore_index=True)
+
 
 df = load_csvs(pathlist, keyword)
+
 agg = df.groupby('tag')[['nCandidates','nEvents15y']].sum().sort_index()
 
 if options.dump:
@@ -157,6 +160,7 @@ if options.dump:
 
 rec_nc, rec_n15 = agg.loc["reconstructed", ["nCandidates", "nEvents15y"]]
 sim_nc, sim_n15 = agg.loc["simulated", ["nCandidates", "nEvents15y"]]
+
 # print summary blocks
 def _block(title, tags):
     rows = []
@@ -183,9 +187,9 @@ def _block(title, tags):
 
 
     if title=='Event Stats':
-        print(tabulate(rows, headers=[title,'nEvents generated(/nSim in %)','nEvents in 15 y (/nSim in %)'], tablefmt='rounded_grid', floatfmt='.3f'))
+        print(tabulate(rows, headers=[title,'nEvents generated(/nSim in %)','nEvents in 15 y (/nSim in %)'], tablefmt='rounded_grid', floatfmt='.2e'))
     else:
-        print(tabulate(rows, headers=[title,'nEvents generated(/nReco in %)','nEvents in 15 y (/nReco in %)'], tablefmt='rounded_grid', floatfmt='.3f'))
+        print(tabulate(rows, headers=[title,'nEvents generated(/nReco in %)','nEvents in 15 y (/nReco in %)'], tablefmt='rounded_grid', floatfmt='.2e'))
     print()
 
 # 1) Event stats
@@ -205,6 +209,7 @@ for title, tags in table_specs:
 printed = set(['simulated','reconstructed']) | set(pre_tags) | set(veto_tags) | set(t for _,g in table_specs for t in g)
 others = [t for t in agg.index if t not in printed]
 if others: _block('Other cuts', others)
+"""
 #---------------------------------------------------------------------------------------------------------------------------------------
 # indexed menu clustered for further interactive debugging
 all_tags = []
@@ -213,12 +218,13 @@ clustered = [('Event Stats',['simulated','reconstructed']),
 for _, tags in clustered:
     for t in tags:
         all_tags.append(t)
-menu = [[i,t,int(agg.at[t,'nCandidates']) if t in agg.index else 0, f"{agg.at[t,'nEvents15y']:.3f}" if t in agg.index else '0.000']
+menu = [[i,t,int(agg.at[t,'nCandidates']) if t in agg.index else 0, f"{agg.at[t,'nEvents15y']}" if t in agg.index else '0.000']
         for i,t in enumerate(all_tags)]
-print(tabulate(menu, headers=['#','tag','nEvents generated','nEvents15y'], tablefmt='rounded_grid', floatfmt='.3f'))
+print(tabulate(menu, headers=['#','tag','nEvents generated','nEvents15y'], tablefmt='rounded_grid'))
 print()
-"""
+
 # prompt
+
 try:
     choice = input('Enter tag number (blank to exit): ').strip()
     if not choice: sys.exit(0)
@@ -229,13 +235,74 @@ except:
 print(f"Selected [{idx}]: {tag}\n")
 
 # lookup
-sel = df[(df.tag==tag)&(df.nCandidates>0)][['job','nEvents','nEvents15y']].reset_index(drop=True)
+sel = df[(df.tag==tag)&(df.nCandidates>0)][['job',"nCandidates", "nEvents15y"]].reset_index(drop=True)
 if sel.empty:
     print('No jobs with non-zero for',tag)
 else:
-    sel["nEvents"] = sel["nEvents"].apply(lambda x: fmt(x, rec_nc))
+    sel["nCandidates"] = sel["nCandidates"].apply(lambda x: fmt(x, rec_nc))
     sel["nEvents15y"]  = sel["nEvents15y"].apply(lambda x: fmt(x, rec_n15))
-    print(tabulate(sel.values.tolist(), headers=['job','nEvents','nEvents15y'], tablefmt='rounded_grid', floatfmt='.3f'))
+    print(tabulate(sel.values.tolist(), headers=['job','nEvents generated','nEvents15y'], tablefmt='rounded_grid', floatfmt='.2e'))
 
 #---------------------------------------------------------------------------------------------------------------------------------------
 """
+#---------------------------------------------------------------------------------------------------------------------------------------
+# indexed menu clustered for further interactive debugging
+
+def _build_all_tags():
+    all_tags = []
+    clustered = [('Event Stats',['simulated','reconstructed']),
+                 ('Pre-Selection', pre_tags), ('Veto', veto_tags)] + table_specs + [('Other cuts', others)]
+    for _, tags in clustered:
+        for t in tags:
+            all_tags.append(t)
+    return all_tags
+
+def _build_menu(all_tags):
+    return [[i, t,
+             int(agg.at[t, 'nCandidates']) if t in agg.index else 0,
+             f"{agg.at[t, 'nEvents15y']}" if t in agg.index else '0.000']
+            for i, t in enumerate(all_tags)]
+
+while True:
+    all_tags = _build_all_tags()
+    menu = _build_menu(all_tags)
+    print(tabulate(menu, headers=['#','tag','nEvents generated','nEvents15y'],
+                   tablefmt='rounded_grid'))
+    print()
+
+    try:
+        choice = input('Enter tag number (blank to exit): ').strip()
+        if not choice:
+            break
+        idx = int(choice)
+        if idx < 0 or idx >= len(all_tags):
+            print('Invalid index.\n')
+            continue
+        tag = all_tags[idx]
+    except (ValueError, KeyboardInterrupt, EOFError):
+        print('Invalid.\n')
+        continue
+
+    print(f"Selected [{idx}]: {tag}\n")
+
+    # lookup
+    sel = df[(df.tag == tag) & (df.nCandidates > 0)][['job', 'nCandidates', 'nEvents15y']].reset_index(drop=True)
+    if sel.empty:
+        print('No jobs with non-zero for', tag)
+    else:
+        sel["nCandidates"] = sel["nCandidates"].apply(lambda x: fmt(x, rec_nc))
+        sel["nEvents15y"]  = sel["nEvents15y"].apply(lambda x: fmt(x, rec_n15))
+        print(tabulate(sel.values.tolist(),
+                       headers=['job','nEvents generated','nEvents15y'],
+                       tablefmt='rounded_grid', floatfmt='.2e'))
+
+    try:
+        again = input("Do you wish to continue? [yes/no] ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        break
+    if again in ('', 'y', 'yes'):
+        print()
+        continue
+    else:
+        break
+#---------------------------------------------------------------------------------------------------------------------------------------

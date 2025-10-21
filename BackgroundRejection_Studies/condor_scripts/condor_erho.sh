@@ -17,6 +17,10 @@ echo 'config sourced'
 
 
 python /afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/run_erho.py -i "$JOB"
+if [ $? -ne 0 ]; then
+    echo "ERROR: Step failed. Exiting script."
+    exit 1
+fi
 
 mkdir -p "/eos/experiment/ship/user/anupamar/BackgroundStudies/erho_EventCalc/$JOB"
 

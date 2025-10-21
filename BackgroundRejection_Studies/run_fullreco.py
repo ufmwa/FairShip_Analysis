@@ -9,9 +9,10 @@ import pandas as pd
 import shipunit as u
 import numpy as np
 p = argparse.ArgumentParser(description=__doc__)
-p.add_argument("-p", "--path", default="/eos/experiment/ship/user/anupamar/Signal_EventCalc/mupi/12947081/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01",help="Path to simulation file") #mupi 1 GeV
+p.add_argument("-p", "--path", default="/eos/experiment/ship/user/anupamar/Signal_EventCalc/mupi/12968090/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01",help="Path to simulation file") #mupi 1 GeV
 
 known, rest = p.parse_known_args(sys.argv[1:])
+
 def define_time_till_vtx(event):
 	
 	Mom = event.MCTrack[0].GetP()/u.GeV
@@ -30,7 +31,7 @@ def define_time_till_vtx(event):
 	
 	return t_ns
 
-def define_weight_EventCalc(event,path=known.path):
+def define_weight_EventCalc(event,path=known.path,w_DIS=None): #w_DIS is kept to maintain the similiarity in code
 	
 	w_event=event.MCTrack[0].GetWeight()
 

@@ -1,0 +1,24 @@
+executable          	= signal_condor.sh
+transfer_output_files 	= ""
+arguments             	= $(ClusterId) $(ProcId) 
+notify_user				= anupama.reghunath@hu-berlin.de
+notification 			= Error
+
+##############################################################################################################
+#error 					= /afs/cern.ch/work/a/anupamar/HTCondor_files/error/falseveto_v3_$(ClusterId).$(ProcId).err
+#log 					= /afs/cern.ch/work/a/anupamar/HTCondor_files/log/falseveto_v3_$(ClusterId).$(ProcId).log
+#output					= /afs/cern.ch/work/a/anupamar/HTCondor_files/output/falseveto_v3_$(ClusterId).$(ProcId).out
+##############################################################################################################
+
+#request_disk			= 50 GB
+on_exit_remove   		= (ExitBySignal == False) && (ExitCode == 0)
+
+max_retries      		= 3
+#requirements     		= (Machine =!= LastRemoteHost) 
+#request_memory 		= 50 GB
+max_materialize 		= 100
+
+##############################################################################################################
++JobFlavour="testmatch"
+##############################################################################################################
+queue 500
