@@ -123,6 +123,7 @@ def gnn_output_binary(model, inputmatrix, XYZ, threshold=0.6):
 def gnn_output_deltaT(model, x, sbt_xyz):
     """
     Runs GNN on input x of shape (1, 854, 5): [E, Δt, vx, vy, vz].
+    Also adds an additional phi feature onto the deltaT
     Returns: (logits, veto_decision, classification)
     """
     Ncells = sbt_xyz.shape[1]
@@ -130,7 +131,7 @@ def gnn_output_deltaT(model, x, sbt_xyz):
     # x shape: (1, 854, 5)
     energy    = x[0, :, 0]         # shape: (854,)
     delta_t   = x[0, :, 1]         # shape: (854,)
-    vx_array  = x[0, :, 2]         # same vx repeated
+    vx_array  = x[0, :, 2]         
     vy_array  = x[0, :, 3]
     vz_array  = x[0, :, 4]
 
@@ -144,7 +145,7 @@ def gnn_output_deltaT(model, x, sbt_xyz):
         geom[0], geom[1], geom[2],     # X, Y, Z
         vx_array, vy_array, vz_array,  # vertex x/y/z
         delta_t,
-        phi,                        # optionally add this back if model expects
+        phi,                       
     ], axis=1)
 
     # Keep only non-zero energy hits

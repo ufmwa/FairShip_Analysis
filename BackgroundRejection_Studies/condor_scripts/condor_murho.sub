@@ -1,13 +1,13 @@
-executable          	= condor_murho.sh
+executable          	= condor_signal.sh
 transfer_output_files 	= ""
-arguments             	= $(ClusterId) $(ProcId) $(Runnumber)
+arguments             	= $(ClusterId) $(ProcId) $(Runnumber) /eos/experiment/ship/user/anupamar/BackgroundStudies/alt_v2/ /afs/cern.ch/user/a/anupamar/alt_v2/FairShip_Analysis/ murho
 notify_user				= anupama.reghunath@hu-berlin.de
 notification 			= Error
 
 ##############################################################################################################
-#error 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/error/mumuv_$(ClusterId).$(ProcId).err
-#log 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/log/mumuv_$(ClusterId).$(ProcId).log
-#output 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/output/mumuv_$(ClusterId).$(ProcId).out
+#error 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/error/murho_$(ClusterId).$(ProcId).err
+#log 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/log/murho_$(ClusterId).$(ProcId).log
+#output 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/output/murho_$(ClusterId).$(ProcId).out
 ##############################################################################################################
 #request_memory 		= 50 GB
 #request_disk			= 4 GB

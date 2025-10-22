@@ -18,8 +18,10 @@ from sbtveto.util.inference import nn_output
 from sbtveto.model.gnn_model import EncodeProcessDecode
 from sbtveto.util.inference import gnn_output_binary,gnn_output_binary_wdeltaT
 #from torch_geometric.data import Data
+from pathlib import Path
 
-
+_REPO_ROOT = Path(__file__).resolve().parent
+_DATA_DIR  = _REPO_ROOT / "sbtveto" / "data"
 
 class AnalysisContext:
     def __init__(self, tree, geo_file):
@@ -64,34 +66,7 @@ class AnalysisContext:
 
 class selection_check:
     """Class to perform various selection checks on the candidate."""
-    """
-    def __init__(self,tree, geo_file):
-        #Initialize the selection_check class with geometry and configuration.
-        self.geometry_manager = geo_file.Get("FAIRGeom")
-        unpickler = Unpickler(geo_file)
-        self.ship_geo = unpickler.load("ShipGeo")
 
-        fairship = ROOT.gSystem.Getenv("FAIRSHIP")
-
-        if self.ship_geo.DecayVolumeMedium == "helium":
-            with open(fairship + "/geometry/veto_config_helium.yaml") as file:
-                config = yaml.safe_load(file)
-                self.veto_geo = AttrDict(config)
-                self.veto_geo.z0
-        if self.ship_geo.DecayVolumeMedium == "vacuums":
-            with open(fairship + "/geometry/veto_config_vacuums.yaml") as file:
-                config = yaml.safe_load(file)
-                self.veto_geo = AttrDict(config)
-        self.tree = tree
-
-        self.fieldMaker = geomGeant4.addVMCFields(self.ship_geo, '', True, withVirtualMC = False)
-        geoMat =  ROOT.genfit.TGeoMaterialInterface()
-        ROOT.genfit.MaterialEffects.getInstance().init(geoMat)
-        bfield = ROOT.genfit.FairShipFields()
-        bfield.setField(self.fieldMaker.getGlobalField())
-        self.fM = ROOT.genfit.FieldManager.getInstance()
-        self.fM.init(bfield)
-    """
     def __init__(self, ctx: AnalysisContext):
         self.tree             = ctx.tree
         self.geometry_manager = ctx.geometry_manager
@@ -312,7 +287,7 @@ class selection_check:
                   2     = semileptonic(any lepton),
                   2.1   = semileptonic containing an e,
                   2.2   = semileptonic containing a μ,
-                  3     = at least one track has unknown PID, #never used since truth
+                  3     = at least one track has unknown PID, #never used since truth but added for historical reasons
                   4     = fewer than two PID tracks available #two track candidates
 
         """
@@ -340,7 +315,7 @@ class selection_check:
         d1_is_e= (abs(d1_pdg)==11)
         d2_is_e= (abs(d2_pdg)==11)            
 
-        # ---------- 4. decide on the return code ----------------------------------
+        
         if d1_is_lepton and d2_is_lepton:                       # dileptonic final state
             if d1_is_e and d2_is_e:
                 return 1.1
@@ -527,70 +502,32 @@ class event_inspector:
             )
         )
 
-    def switch_to_truth_hypotheses(self):
-        """
-        For every FitTrack in `evt` replace the default muon hypothesis
-        by the MC-truth hypothesis (taken from evt.MCTrack) and refit
-        *only* that new rep.
-        """
-        evt=self.event
-
-        for i_trk, gf_track in enumerate(evt.FitTracks):
-            # ------------------------------
-            # 1) look up the matching MC particle
-            # ------------------------------
-            mc_idx = evt.fitTrack2MC[i_trk]              # mapping from SHiP reco to MC
-            pdg    = int(evt.MCTrack[mc_idx].GetPdgCode())
-
-            # ------------------------------
-            # 3) wipe the old rep(s) and attach the new one
-            # ---------------------------------------------------------
-            for rep_id in reversed(range(gf_track.getNumReps())):   # delete highest → 0
-                gf_track.deleteTrackRep(rep_id)
-
-            # ---------------------------------------------------------
-            # add the truth-PDG hypothesis and refit
-            # ---------------------------------------------------------
-            new_rep = ROOT.genfit.RKTrackRep(pdg)
-            gf_track.addTrackRep(new_rep)
-            rep_id  = gf_track.getIdForRep(new_rep)
-            gf_track.setCardinalRep(rep_id)
-            
-            self.fitter.processTrackWithRep(gf_track, new_rep, True)
-
-            fs = gf_track.getFitStatus(rep_id)  
-            # (Optional) inspect the fit result
-            print("χ² / nDoF =", fs.getChi2() / fs.getNdf())
-        #return d1_rec,d2_rec
-
 
 class veto_tasks():
     "Class derived from ShipVeto WIP"
     def __init__(self, ctx: AnalysisContext):
 
         self.SBTefficiency = 0.99  # Surrounding Background tagger: 99% efficiency picked up from TP
-        self.SVTefficiency = 0.995 # Straw Veto tagger: guestimate, including dead channels
-        self.UBTefficiency = 0.9  # Upstream background tagger
+        self.UBTefficiency = 0.9   # Upstream background tagger
         self.random = ROOT.TRandom(13)
         
-        #ROOT.gRandom.SetSeed(13)
-        #self.detList  = self.detMap()
         self.tree = ctx.tree
-        self.sigma_t_SBThit=1.0              #(ns)
         self.sel = selection_check(ctx)
     
     def _cell_fired(self, detID):
         
         """
-        Bernoulli(ε) draw that is identical for every algorithm
-        but refreshed for every event.
+        Decide whether an SBT detector cell is “live” in the current event at a given self.SBTefficiency.
+        The function performs a Bernoulli trial with efficiency.  
+        Fixed random seed ensures that every veto algorithm sees the same live/dead state for a given cell for a given event.
         """
-        # ── event-unique key ──────────────────────────────────────────────
-        evt_time_ns = int(self.tree.ShipEventHeader.GetEventTime())   # ns → int
 
-        seed = (evt_time_ns * 131071 + detID) & 0x7FFFFFFF            # hash
+        evt_time_ns = int(self.tree.ShipEventHeader.GetEventTime())  
+
+        seed = (evt_time_ns * 131071 + detID) & 0x7FFFFFFF           #some unique id 
         ROOT.gRandom.SetSeed(seed)
-        return ROOT.gRandom.Rndm() < self.SBTefficiency               # ε = 0.99
+
+        return ROOT.gRandom.Rndm() < self.SBTefficiency               
     
 
     def SBTcell_map(self): #provides a cell map with index in [0,nCells] for each cell.
@@ -603,17 +540,13 @@ class veto_tasks():
           name = LiSc_cell.GetName()
           detList[index] = name[-6:]
        return detList
-    def SBT_decision(self,mcParticle=None,detector='liquid',threshold=45,advSBT=None,candidate=None,offset=0,Digi_SBTHits=None):
-        
-        # if mcParticle >0, only count hits with this particle
-        # if mcParticle <0, do not count hits with this particle
-        ################################
 
-        #hitSegments = 0
+    def SBT_decision(self,mcParticle=None,detector='liquid',threshold=45,offset=0,Digi_SBTHits=None):
+        """Implementation of Basic SBT veto. """
+
         hitSegments = []
         index = -1
         fdetector = detector=='liquid'
-
 
         if Digi_SBTHits==None:
             Digi_SBTHits=self.tree.Digi_SBTHits
@@ -637,16 +570,14 @@ class veto_tasks():
          position = aDigi.GetXYZ()
          ELoss    = aDigi.GetEloss()
 
-         if ELoss>=threshold*0.001: hitSegments.append(index)#hitSegments += 1 
-         #if aDigi.isValid(): hitSegments += 1 #threshold of 45 MeV per segment
+         if ELoss>=threshold*0.001: hitSegments.append(index)
 
-        #w = (1-self.SBTefficiency)**len(hitSegments)  
-        veto = len(hitSegments) > 0 #self.random.Rndm() > w
+        veto = len(hitSegments) > 0 
 
-        #print 'SBT :',hitSegments
         return veto, None, hitSegments #hitSegments contain the index of the Digihit that causes the veto
 
     def UBT_decision(self):
+      """Implementation of UBT veto. Simple MC check;  no efficiency, no mom. check """
       nHits = 0
       mom = ROOT.TVector3()
       for ahit in self.tree.UpstreamTaggerPoint:
@@ -687,7 +618,7 @@ class veto_tasks():
         if not (fst.isFitConverged() and fst.getNdf()>0):
             return [], [], [], []
 
-        # 1) get fitted state & build the RK rep
+        # get fitted state & build the RK rep
         fstate = track.getFittedState(0)
         pos0   = fstate.getPos()
         mom0   = fstate.getMom()
@@ -695,14 +626,14 @@ class veto_tasks():
         state  = ROOT.genfit.StateOnPlane(rep)
         rep.setPosMom(state, pos0, mom0)
 
-        # 2) set up geometry navigator once
+        
         nav = ROOT.gGeoManager.GetCurrentNavigator()
         
         # point & direction for backwards stepping
         dx, dy, dz = (-mom0.Unit()).X(), (-mom0.Unit()).Y(), (-mom0.Unit()).Z()
         nav.InitTrack(pos0.X(), pos0.Y(), pos0.Z(), dx, dy, dz)
 
-        # 3) sample the trajectory
+        # sample the trajectory
         back_cm = back_dist_m * u.m
         ds      = -back_cm / float(n_steps)
         xs = []; ys = []; zs = []
@@ -713,7 +644,6 @@ class veto_tasks():
             xs.append(p.X()); ys.append(p.Y()); zs.append(p.Z())
 
             node = nav.FindNode(p.X(), p.Y(), p.Z())
-            #if node and node.GetName().startswith("LiSc"):
             if node and node.GetName().startswith(("LiSc", "VetoInnerWall", "VetoOuterWall","VetoVerticalRib","VetoLongitRib")):
                 predPos = p
                 predMom = state.getMom()
@@ -727,12 +657,11 @@ class veto_tasks():
                 break
             
 
-        # 4) if we never hit LiSc, you can still push to the first boundary:
+        # if we never hit LiSc, still push to the first boundary
         
         if predPos is None:
             # reset & do one boundary‐stop propagate
             rep.setPosMom(state, pos0, mom0)
-            # target = full backwards range
             full_target = pos0 + mom0.Unit()*ds*n_steps
             
             rep.extrapolateToPoint(state, full_target, True)
@@ -740,9 +669,9 @@ class veto_tasks():
             predMom = state.getMom()
             return [], xs, ys, zs
 
-        # 5) match the nearest SBT hits
+        # match the nearest SBT hits
         
-        hits_in_tol = []      # will hold tuples of (hit) within the 160cm of the track
+        hits_in_tol = []      # will hold tuples of (hit) within the 320 cm of the track 
         
         if Digi_SBTHits==None:
             Digi_SBTHits=self.tree.Digi_SBTHits
@@ -760,107 +689,13 @@ class veto_tasks():
 
         return hits_in_tol, xs, ys, zs
 
-    def pointing_to_vertex(self,candidate=None,Digi_SBTHits=None,threshold=45,time_window_ns=3,t_vtx=None,offset=0):
-         
-        if candidate==None:
-            candidate=self.tree.Particles[0]
-    
-        candidate_pos = ROOT.TVector3()
-        candidate.GetVertex(candidate_pos)
-        
-        if Digi_SBTHits==None:
-            Digi_SBTHits=self.tree.Digi_SBTHits
-        
-        if t_vtx==None:
-            t_vtx = self.sel.define_candidate_time(candidate,offset)  # already in ns
-        
-        matched=[]
-        
-        for hit in Digi_SBTHits:
-
-            if hit.GetEloss() < threshold*0.001: continue
-
-            d_cm = (hit.GetXYZ() - candidate_pos).Mag()
-            
-            t_exp = t_vtx + (d_cm / u.c_light)
-
-            dt = abs(hit.GetTDC() - t_exp)             # in ns
-
-            if dt < time_window_ns:
-                matched.append(hit)
-
-        if len(matched):
-            return matched, True            
-
-        return matched, False            
-
-    def Veto_decision_GNNbinary(self,
-                            mcParticle=None,
-                            detector='liquid',
-                            candidate=None,
-                            threshold=0.6,Digi_SBTHits=None):
-        """
-        Binary SBT veto: returns (veto, P(background)).
-        """
-
-        # ---------- copy–paste from the old 3-class code ------------------
-        self.inputmatrix = []
-
-        XYZ = np.load("/afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/sbtveto_william/data/SBT_new_geo_XYZ.npy")   # 854-cell geometry
-        model = EncodeProcessDecode(
-            mlp_output_size=8,
-            global_op=1,          # ONE output !
-            num_blocks=4)
-
-        # load weights once
-        if not hasattr(self, "_gnn_bin_loaded"):
-            model.load_state_dict(
-                torch.load("/afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/sbtveto_william/data/GNN_SBTveto_BINARY_45MeV_25epochs.pth",
-                           map_location="cpu"))
-            model.eval()
-            self._gnn_bin_loaded = model
-        else:
-            model = self._gnn_bin_loaded
-        # ---------------------------------------------------------------
-
-        detList = self.SBTcell_map()
-        energy_array = np.zeros(854, dtype=np.float32)        # 854 cells
-        if Digi_SBTHits==None:
-            Digi_SBTHits=self.tree.Digi_SBTHits
-
-        for aDigi in Digi_SBTHits:
-
-            detID = str(aDigi.GetDetectorID())
-            idx   = [i for i, v in detList.items() if v == detID][0]
-            if idx < 854:
-                energy_array[idx] = aDigi.GetEloss()
-
-        if candidate is None:
-            candidate = self.tree.Particles[0]
-
-        cand_pos = ROOT.TLorentzVector()
-        candidate.ProductionVertex(cand_pos)
-        vertexposition = np.array(
-            [cand_pos.X(), cand_pos.Y(), cand_pos.Z()], dtype=np.float32)
-
-        self.inputmatrix.append(np.concatenate((energy_array, vertexposition)))
-        self.inputmatrix = np.array(self.inputmatrix, dtype=np.float32)
-
-        # ---------- one-line binary inference ----------------------------
-        veto, prob_bg = gnn_output_binary(model, self.inputmatrix, XYZ, threshold)
-        return veto, prob_bg
-
-    def Veto_decision_GNNbinary_wdeltaT(self,
-                                mcParticle=None,
-                                detector='liquid',
-                                candidate=None,
-                                threshold=0.6,offset=0,Digi_SBTHits=None):
+    def Veto_decision_GNNbinary_wdeltaT(self,candidate=None,threshold=0.6,offset=0,Digi_SBTHits=None):
         """
         Binary SBT veto: returns (veto, P(background)) using energy, deltaT, vertex info.
         """
 
         # --- Geometry ---
-        XYZ = np.load("/afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/sbtveto_william/data/SBT_new_geo_XYZ.npy")   # (3, 854)
+        XYZ = np.load(_DATA_DIR / "SBT_new_geo_XYZ.npy")   # (3, 854)
         
         # --- Load Model ---
         model = EncodeProcessDecode(
@@ -870,7 +705,7 @@ class veto_tasks():
         )
 
         if not hasattr(self, "_gnn_bin_loaded"):
-            model.load_state_dict(torch.load("/afs/cern.ch/user/a/anupamar/FairShip_Analysis/BackgroundRejection_Studies/sbtveto_william/data/GNN_SBTveto_BINARY_45MeV_25epochs_wdeltaT.pth", map_location="cpu"))
+            model.load_state_dict(torch.load(_DATA_DIR / "GNN_SBTveto_BINARY_45MeV_25epochs_wdeltaT.pth", map_location="cpu",weights_only=False))
             model.eval()
             self._gnn_bin_loaded = model
         else:
@@ -918,10 +753,10 @@ class veto_tasks():
 
         # --- Check if any valid cell remains ---
         if not np.any(energy_array > 0.0):
-            print("\t\tNo fired cell → classify as signal and return")
+            #print("\t\tNo fired cell → classify as signal and return")
             return False, 0.0
 
-        # --- Construct (854, 6) input matrix: energy, deltaT, vertexX/Y/Z ---
+        # --- Construct input matrix: energy, deltaT, vertexX,vertexY,vertexZ ---
         features = np.stack([
             energy_array,
             delta_t,
@@ -934,55 +769,5 @@ class veto_tasks():
 
         # --- Run binary GNN decision ---
         veto, prob_bg = gnn_output_binary_wdeltaT(model, inputmatrix, XYZ, threshold)
+        
         return veto, prob_bg
-
-
-class weights_calc():
-    "Class derived from ShipVeto WIP"
-    
-    def __init__(self, ctx: AnalysisContext):
-        self.event = ctx.tree
-    
-    def defineweight_muon(self,SHiP_running=15):
-        """Calculate event weight in 15 years."""    
-        
-        w_mu=self.event.MCTrack[0].GetWeight()  #weight of the incoming muon*DIS multiplicity normalised to a full spill   sum(w_mu) = nMuons_perspill = number of muons in a spill. w_mu is not the same as N_muperspill/N_gen, where N_gen = nEvents*DISmultiplicity ( events enhanced in Pythia to increase statistics) .
-
-        cross=self.event.CrossSection
-        rho_l=self.event.MCTrack[2].GetWeight()
-        
-        N_a=6.022e+23 
-
-        sigma_DIS=cross*1e-27*N_a #cross section cm^2 per mole
-        
-        nPOTinteraction     =(2.e+20)*(SHiP_running/5) #in years
-        nPOTinteraction_perspill =5.e+13
-        
-        n_Spill  = nPOTinteraction/nPOTinteraction_perspill  #Number of Spills in SHiP running( default=5) years  
-            
-        weight_i = rho_l*sigma_DIS*w_mu*n_Spill 
-
-        return weight_i    
-
-
-    def define_weight_neuDIS(self,SHiP_running=15,N_gen=100000*98): #Each file has 100k events each change N_gen according to files(1) used for analysis, and 98 successful jobs
-        
-        w_DIS    =  self.event.MCTrack[0].GetWeight()
-        nPOTinteraction     =(2.e+20)*(SHiP_running/5)
-        nPOTinteraction_perspill =5.e+13
-
-        n_Spill  = nPOTinteraction/nPOTinteraction_perspill #number of spill in SHiP_running(default=15) years
-        
-        nNu_perspill=4.51e+11       #number of neutrinos in a spill.
-        
-        N_nu=nNu_perspill*n_Spill   #Expected number of neutrinos in 15 years
-
-        w_nu=nNu_perspill/N_gen     #weight of each neutrino considered scaled to a spill such that sum(w_nu)=(nNu_perspill/N_gen)*N_gen= nNu_perspill = number of neutrinos in a spill.
-        
-        N_A=6.022*10**23
-        E_avg=2.57 #GeV
-        sigma_DIS=7*(10**-39)*E_avg*N_A  #cross section cm^2 per mole
-        
-        return w_DIS*sigma_DIS*w_nu*n_Spill  #(rho_L*N_nu*N_A*neu_crosssection*E_avg)/N_gen     #returns the number of the DIS interaction events of that type in SHiP running(default=5) years.   #DIS_multiplicity=1 here
-
-                

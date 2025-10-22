@@ -9,7 +9,7 @@ import pandas as pd
 import shipunit as u
 import numpy as np
 p = argparse.ArgumentParser(description=__doc__)
-p.add_argument("-p", "--path", default="/eos/experiment/ship/user/anupamar/Signal_EventCalc/2pie/12968088/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01",help="Path to simulation file") #mumunu 1 GeV
+p.add_argument("-p", "--path", default="/eos/experiment/ship/user/anupamar/Signal_EventCalc/2muv/12946374/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01",help="Path to simulation file") #mumunu 1 GeV
 
 known, rest = p.parse_known_args(sys.argv[1:])
 
@@ -28,6 +28,7 @@ def define_time_till_vtx(event):
 	
 	t_ns  = dist_from_target / v
 	# return the time taken for the particle to reach the X,YZ from the start point
+
 	return t_ns
 
 def define_weight_EventCalc(event,path=known.path,w_DIS=None): #w_DIS is kept to maintain the similiarity in code
@@ -81,10 +82,11 @@ def define_weight_EventCalc(event,path=known.path,w_DIS=None): #w_DIS is kept to
 	return expected
 
 
+
 sys.argv = [sys.argv[0], *rest, "-p", known.path] # Pass the parsed path plus any remaining CLI args
 
-print(f"Partial Reco. (l ρ) channel Analysis starts now ")
-ipcut=(10,250)
-finalstate='semileptonic'
+print(f"Partial Reco. (l l ν) channel Analysis starts now ")
+ipcut=250
+finalstate='dileptonic'
 
 main(IP_CUT=ipcut,weight_function=define_weight_EventCalc,fix_candidatetime=define_time_till_vtx,finalstate=finalstate)

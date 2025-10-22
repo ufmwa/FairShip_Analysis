@@ -4,6 +4,7 @@
 #-----------------------------------------------------------------------------------------------------------
 
 import sys, argparse
+import pandas as pd
 
 def calcweight_muonDIS(event,SHiP_running=15,w_DIS=None):
     """Calculate event weight in 15 years."""    
@@ -31,6 +32,7 @@ def calcweight_muonDIS(event,SHiP_running=15,w_DIS=None):
     return weight_i    
 
 
+
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("-p", "--path", default="/eos/experiment/ship/simulation/bkg/MuonDIS_2024helium/8070735")
 
@@ -43,22 +45,52 @@ g.add_argument("--partialreco", dest="channel", action="store_const", const="par
 g.add_argument("--fullreco", dest="channel", action="store_const", const="fullreco",
                help="Run studies for the fully reconstructed (l π) channel")
 
-
 known, rest = p.parse_known_args(sys.argv[1:])
 
-# ---------- choose the analysis module -----------------------------------
-if known.channel == "leptonrho":
-    from selectioncheck_leptonrho_muonDIS import main
-    ipcut=250
-elif known.channel == "partialreco":
-    from selectioncheck_muonDIS import main
-    ipcut=250
-elif known.channel == "fullreco":
-    from selectioncheck_muonDIS import main
-    ipcut=10
-else:
-    raise RuntimeError("Bug: unhandled channel flag")
 
-# Pass the parsed path plus any *remaining* CLI args to the core.
-sys.argv = [sys.argv[0], *rest, "-p", known.path]
-main(IP_CUT=ipcut,weight_function=calcweight_muonDIS)
+dis = (pd.read_csv(known.path+"/ndis_summary.csv")                       #contains the number of DIS in helium /vessel for each muon tagged to the eventNr and job_id; easy lookup but ugly fix!
+         .rename(columns={"muon_folder/job_folder": "job_folder"})  
+         .astype({"eventNr": int})
+         .set_index(["job_folder", "eventNr"]))
+
+def ndis_rescale(job_folder,event_nr, ip_cat):
+    
+    row = dis.loc[(job_folder, int(event_nr))]
+    num = int(row["nDIS_all"])
+    
+    if ip_cat=='vesselCase':
+        den = int(row["nDIS_vessel"])
+    if ip_cat=='heliumCase':
+        den = int(row["nDIS_helium"])
+    if ip_cat=='all':
+        den = int(row["nDIS_all"])
+
+    return num / den
+
+
+
+from selectioncheck import main
+
+if known.channel == "leptonrho":
+    
+    print(f"Partial Reco. (l ρ) channel Analysis starts now ")
+    ipcut=(10,250)
+    finalstate='semileptonic'
+
+elif known.channel == "partialreco":
+
+    print(f"Partial Reco. (l l ν) channel Analysis starts now ")
+    ipcut=250
+    finalstate='dileptonic'
+
+elif known.channel == "fullreco":
+
+    print(f"Fully Reco. (l π) channel Analysis starts now ")
+    ipcut=10
+    finalstate='semileptonic'
+
+else:
+    raise RuntimeError("Unknown channel flag")
+
+sys.argv = [sys.argv[0], *rest, "-p", known.path] # Pass the parsed path plus any remaining args
+main(IP_CUT=ipcut,weight_function=calcweight_muonDIS,fix_nDIS=ndis_rescale,finalstate=finalstate)

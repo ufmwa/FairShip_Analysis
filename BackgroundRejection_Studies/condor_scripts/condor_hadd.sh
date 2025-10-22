@@ -4,8 +4,8 @@ KEY=$2
 
 #######################################################################################
 source /cvmfs/ship.cern.ch/24.10/setUp.sh 
-source /afs/cern.ch/user/a/anupamar/HTCondor/configfiles/config_ECN3_2024.sh #alienv load FairShip/latest-master-release > config_<version>.sh
-echo 'config sourced'
+#source /afs/cern.ch/user/a/anupamar/HTCondor/configfiles/config_ECN3_2024.sh #alienv load FairShip/latest-master-release > config_<version>.sh
+#echo 'config sourced'
 #######################################################################################
 
 OUT="combined_selectionparameters_${KEY}.root"
@@ -35,10 +35,6 @@ for FLAV in "${FLAVOURS[@]}"; do
 
   (( ${#FILES[@]} )) || { echo "↪ skipping $FLAV (none found)" ; echo ; continue ; }
 
-
-  #echo ">>> hadd command:"
-  #echo "    hadd -j 8 -f \"$TMPDIR/$FLAV.root\"  <${#FILES[@]} input files>"
-  #hadd -j 8 -f "${TMPDIR}/${FLAV}.root" "${FILES[@]}"
   # -------------------------------------------------------------------
   # build the list file instead of expanding a huge "$@" on the command line
   listfile="$TMPDIR/${FLAV}_files.txt"

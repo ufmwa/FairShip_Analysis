@@ -2,7 +2,7 @@
 """Wrapper Script to run selection checks on Fully recon. samples (EventCalc)."""
 
 #-----------------------------------------------------------------------------------------------------------
-from selectioncheck_leptonrho import main
+from selectioncheck import main
 import sys, argparse
 import os,ROOT
 import pandas as pd
@@ -81,6 +81,10 @@ def define_weight_EventCalc(event,path=known.path,w_DIS=None): #w_DIS is kept to
 	return expected
 
 
-# Pass the parsed path plus any *remaining* CLI args to the core.
-sys.argv = [sys.argv[0], *rest, "-p", known.path]
-main(weight_function=define_weight_EventCalc,fix_candidatetime=define_time_till_vtx)
+sys.argv = [sys.argv[0], *rest, "-p", known.path] # Pass the parsed path plus any remaining CLI args
+
+print(f"Partial Reco. (l ρ) channel Analysis starts now ")
+ipcut=(10,250)
+finalstate='semileptonic'
+
+main(IP_CUT=ipcut,weight_function=define_weight_EventCalc,fix_candidatetime=define_time_till_vtx,finalstate=finalstate)

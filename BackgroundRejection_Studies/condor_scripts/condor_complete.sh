@@ -6,6 +6,7 @@
 JOB=$3
 EOSDIR=$4
 SCRIPTDIR=$5
+KEYWORD=$6  #neuDIS or muonDIS
 
 #--------------------------------------------------------------------------------------
 
@@ -19,15 +20,14 @@ echo 'config sourced'
 
 #######################################################################################
 
-python "$SCRIPTDIR/BackgroundRejection_Studies/run_neuDIS.py" -i "$JOB" --leptonrho
+python "$SCRIPTDIR/BackgroundRejection_Studies/run_${KEYWORD}.py" -i "$JOB" --leptonrho
 if [ $? -ne 0 ]; then
     echo "ERROR: Job failed. Exiting script for safe rerun later"
     exit 1
 fi    
 
-mkdir -p "$EOSDIR/neuDIS_leptonrho/$JOB"
-
-OUTPUTDIR="$EOSDIR/neuDIS_leptonrho/$JOB"
+OUTPUTDIR="$EOSDIR/${KEYWORD}/leptonrho/$JOB"
+mkdir -p "$OUTPUTDIR"
 
 xrdcp selectionparameters_*.root root://eospublic.cern.ch/"$OUTPUTDIR"/
 xrdcp selection_summary_*.csv root://eospublic.cern.ch/"$OUTPUTDIR"/
@@ -36,14 +36,14 @@ rm selectionparameters_*.root selection_summary_*.csv
 
 #--------------------------------------------------------------------------------------
 
-python "$SCRIPTDIR/BackgroundRejection_Studies/run_neuDIS.py" -i "$JOB" --fullreco
+python "$SCRIPTDIR/BackgroundRejection_Studies/run_${KEYWORD}.py" -i "$JOB" --fullreco
 if [ $? -ne 0 ]; then
     echo "ERROR: Job failed. Exiting script for safe rerun later"
     exit 1
 fi    
-mkdir -p "$EOSDIR/neuDIS_fullreco/$JOB"
 
-OUTPUTDIR="$EOSDIR/neuDIS_fullreco/$JOB"
+OUTPUTDIR="$EOSDIR/${KEYWORD}/fullreco/$JOB"
+mkdir -p "$OUTPUTDIR"
 
 xrdcp selectionparameters_*.root root://eospublic.cern.ch/"$OUTPUTDIR"/
 xrdcp selection_summary_*.csv root://eospublic.cern.ch/"$OUTPUTDIR"/
@@ -52,14 +52,16 @@ rm selectionparameters_*.root selection_summary_*.csv
 
 #--------------------------------------------------------------------------------------
 
-python "$SCRIPTDIR/BackgroundRejection_Studies/run_neuDIS.py" -i "$JOB" --partialreco
+python "$SCRIPTDIR/BackgroundRejection_Studies/run_${KEYWORD}.py" -i "$JOB" --partialreco
+
 if [ $? -ne 0 ]; then
     echo "ERROR: Job failed. Exiting script for safe rerun later"
     exit 1
-fi    
-mkdir -p "$EOSDIR/neuDIS/$JOB"
+fi   
 
-OUTPUTDIR="$EOSDIR/neuDIS/$JOB"
+
+OUTPUTDIR="$EOSDIR/${KEYWORD}/partialreco/$JOB"
+mkdir -p "$OUTPUTDIR"
 
 xrdcp selectionparameters_*.root root://eospublic.cern.ch/"$OUTPUTDIR"/
 xrdcp selection_summary_*.csv root://eospublic.cern.ch/"$OUTPUTDIR"/

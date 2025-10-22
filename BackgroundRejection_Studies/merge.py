@@ -10,47 +10,69 @@ import sys
 
 
 parser = ArgumentParser(description=__doc__)
+
+parser.add_argument("--path", dest="main_path",help="parent path", required=False, default='/eos/experiment/ship/user/anupamar/BackgroundStudies/alt_v2/')
+
 group1 = parser.add_mutually_exclusive_group(required=True)
 
-group1.add_argument("--muonDIS", dest="muonDIS",help="Summarise muonDIS background studies", action="store_true")
-group1.add_argument("--neuDIS",  dest="neuDIS" ,help="Summarise neuDIS background studies",  action="store_true")
+group1.add_argument("--muonDIS",dest="foldername", const="muonDIS",help="muonDIS Background studies", action="store_const")
+group1.add_argument("--neuDIS", dest="foldername", const="neuDIS" ,help="neuDIS Background studies",  action="store_const")
 
-group1.add_argument("--muonDIS_fullreco", dest="muonDIS_fullreco",help="Summarise muonDIS background studies for fully reco.", action="store_true")
-group1.add_argument("--muonDIS_leptonrho", dest="muonDIS_leptonrho",help="Summarise muonDIS background studies for leptonrho", action="store_true")
+group1.add_argument("--mupi",dest="foldername",   const="signalEventCalc/mupi"   ,help="signal (e π) studies",   action="store_const")
+group1.add_argument("--erho",dest="foldername",   const="signalEventCalc/erho"   ,help="signal (e ρ) studies",   action="store_const")
+group1.add_argument("--murho",dest="foldername",  const="signalEventCalc/murho"  ,help="signal (μ ρ) studies",   action="store_const")
+group1.add_argument("--mumuv",dest="foldername",  const="signalEventCalc/mumuv"  ,help="signal (μ μ ν) studies", action="store_const")
 
-group1.add_argument("--neuDIS_fullreco",  dest="neuDIS_fullreco" ,help="Summarise neuDIS background studies  for fully reco.",  action="store_true")
-group1.add_argument("--neuDIS_leptonrho", dest="neuDIS_leptonrho",help="Summarise neuDIS background studies for leptonrho", action="store_true")
 
-group1.add_argument("--mupi",    dest="mupi"   ,help="Summarise full. reco studies",         action="store_true")
+group3 = parser.add_mutually_exclusive_group(required=False)
 
-group1.add_argument("--erho",    dest="erho"   ,help="Summarise erho studies",         action="store_true")
+group3.add_argument("--fullreco"    , dest="analysis_channel", action= "store_const",const="fullreco"    ,help="Background studies for fully reco. (l π) channel")
+group3.add_argument("--partialreco" , dest="analysis_channel", action= "store_const",const="partialreco" ,help="Background studies for partial reco. (l l ν) channel")
+group3.add_argument("--leptonrho"   , dest="analysis_channel", action= "store_const",const="leptonrho"   ,help="Background studies for partial reco. (l ρ) channel")
 
-group1.add_argument("--murho",    dest="murho"   ,help="Summarise erho studies",         action="store_true")
-
-group1.add_argument("--mumuv",    dest="mumuv"   ,help="Summarise partial. reco studies",      action="store_true")
 
 group2 = parser.add_mutually_exclusive_group(required=True)
-group2.add_argument("--all"        , dest="all"       ,help="All interactions"                            , action="store_true")
-group2.add_argument("--vesselCase" , dest="vesselCase",help="Interactions only in the SBT Vessel"         , action="store_true")
-group2.add_argument("--heliumCase" , dest="heliumCase",help="Interactions only in the DecayVolume (helium)", action="store_true")
 
-parser.add_argument("--test", dest="testing_code" , help="Run Test" , required=False, action="store_true",default=False)
-parser.add_argument("--dump", dest="dump", help="Write merged and aggregated DataFrames to CSV", action="store_true")
+group2.add_argument("--all"        , dest="keyword", action= "store_const",const="all"          ,help="Merge job summaries for interactions anywhere")
+group2.add_argument("--vesselCase" , dest="keyword", action= "store_const",const="vesselCase"   ,help="Merge job summaries for interactions only in the SBT vessel")
+group2.add_argument("--heliumCase" , dest="keyword", action= "store_const",const="heliumCase"   ,help="Merge job summaries for interactions only in the decay volume (He medium)")
+
 
 options = parser.parse_args()
 
-if options.all:         keyword = "all"
-elif options.vesselCase:  keyword = "vesselCase"
-elif options.heliumCase:  keyword = "heliumCase"
+if (options.foldername=="muonDIS" or options.foldername=="neuDIS") and options.analysis_channel is None:
+    parser.error(" Missing Analysis channel when using --muonDIS or --neuDIS.")
+    exit(0)
 
 
-main_path='/eos/experiment/ship/user/anupamar/BackgroundStudies/corrected/'
+keyword = options.keyword
+
+main_path=options.main_path
+
+
+if not options.analysis_channel:
+    options.analysis_channel=''
+
+foldername=f'{options.foldername}/{options.analysis_channel}'
+
+if options.foldername=="muonDIS":
+    pathlist = [
+        f'{main_path}/{foldername}/SBT',
+        f'{main_path}/{foldername}/Tr',
+    ]
+else:
+    pathlist = [
+                f'{main_path}/{foldername}/'
+                ]
+
+print(pathlist)
+#main_path='/eos/experiment/ship/user/anupamar/BackgroundStudies/corrected/'
+
+"""
+
+
 
 if options.muonDIS:
-    pathlist = [
-        main_path+'/muonDIS/SBT',
-        main_path+'/muonDIS/Tr'
-    ]
 
 if options.muonDIS_fullreco:
     pathlist = [
@@ -85,37 +107,27 @@ if options.erho:
 
 if options.murho:
     pathlist = [main_path+'/murho_EventCalc/']
-
+"""
 
 # tag definitions
-pre_tags = [
-    "n_particles", "fiducial", "dist2innerwall", "dist2vesselentrance",
-    "impact_par", "doca", "n_dof", "reduced_chi2", "d_mom", "preselection",
-]
-veto_tags = [
-    "BasicSBT@45MeV", "BasicSBT@90MeV", "BasicSBT@0MeV",
-    "AdvSBT@45MeV", "AdvSBT@90MeV","GNNSBT@45MeV", "TOFSBT@45MeV", "TOFSBT@90MeV", "UBT",
-]
-combinedveto_tags = ["UBT+BasicSBT@45MeV","UBT+BasicSBT@90MeV","UBT+AdvSBT@45MeV","UBT+AdvSBT@90MeV","UBT+GNNSBT@45MeV","UBT+TOFSBT@45MeV","UBT+TOFSBT@90MeV"]
-combined_Basic45 = ["preselection+UBT","preselection+UBT+BasicSBT@45MeV","preselection+UBT+BasicSBT@45MeV+PID","preselection+UBT+BasicSBT@45MeV+PID+inv_mass"]
-combined_Basic90 = ["preselection+UBT","preselection+UBT+BasicSBT@90MeV","preselection+UBT+BasicSBT@90MeV+PID","preselection+UBT+BasicSBT@90MeV+PID+inv_mass"]
-combined_Adv45   = ["preselection+UBT","preselection+UBT+AdvSBT@45MeV","preselection+UBT+AdvSBT@45MeV+PID","preselection+UBT+AdvSBT@45MeV+PID+inv_mass"]
-combined_GNN45   = ["preselection+UBT","preselection+UBT+GNNSBT@45MeV","preselection+UBT+GNNSBT@45MeV+PID","preselection+UBT+GNNSBT@45MeV+PID+inv_mass"]
-combined_Adv90   = ["preselection+UBT","preselection+UBT+AdvSBT@90MeV","preselection+UBT+AdvSBT@90MeV+PID","preselection+UBT+AdvSBT@90MeV+PID+inv_mass"]
-combined_TOF45   = ["preselection+UBT","preselection+UBT+TOFSBT@45MeV","preselection+UBT+TOFSBT@45MeV+PID","preselection+UBT+TOFSBT@45MeV+PID+inv_mass"]
-combined_TOF90   = ["preselection+UBT","preselection+UBT+TOFSBT@90MeV","preselection+UBT+TOFSBT@90MeV+PID","preselection+UBT+TOFSBT@90MeV+PID+inv_mass"]
-combined_45   = ["preselection+UBT","preselection+UBT+[AdvSBT + GNNSBT ]@45MeV","preselection+UBT+[AdvSBT + GNNSBT ]@45MeV+ PID","preselection+UBT+[AdvSBT + GNNSBT ]@45MeV+ PID+inv_mass"]
+pre_tags            = ["n_particles", "fiducial", "dist2innerwall", "dist2vesselentrance","impact_par", "doca", "n_dof", "reduced_chi2", "d_mom", "preselection"]
+veto_tags           = ["BasicSBT@45MeV", "BasicSBT@90MeV", "BasicSBT@0MeV","AdvSBT@45MeV", "AdvSBT@90MeV","GNNSBT@45MeV", "UBT"]
+combinedveto_tags   = ["UBT+BasicSBT@45MeV","UBT+BasicSBT@90MeV","UBT+AdvSBT@45MeV","UBT+AdvSBT@90MeV","UBT+GNNSBT@45MeV"]
+combined_Basic45    = ["preselection+UBT","preselection+UBT+BasicSBT@45MeV","preselection+UBT+BasicSBT@45MeV+PID","preselection+UBT+BasicSBT@45MeV+PID+inv_mass"]
+combined_Basic90    = ["preselection+UBT","preselection+UBT+BasicSBT@90MeV","preselection+UBT+BasicSBT@90MeV+PID","preselection+UBT+BasicSBT@90MeV+PID+inv_mass"]
+combined_Adv45      = ["preselection+UBT","preselection+UBT+AdvSBT@45MeV","preselection+UBT+AdvSBT@45MeV+PID","preselection+UBT+AdvSBT@45MeV+PID+inv_mass"]
+combined_GNN45      = ["preselection+UBT","preselection+UBT+GNNSBT@45MeV","preselection+UBT+GNNSBT@45MeV+PID","preselection+UBT+GNNSBT@45MeV+PID+inv_mass"]
+combined_Adv90      = ["preselection+UBT","preselection+UBT+AdvSBT@90MeV","preselection+UBT+AdvSBT@90MeV+PID","preselection+UBT+AdvSBT@90MeV+PID+inv_mass"]
+combined_45         = ["preselection+UBT","preselection+UBT+[ AdvSBT+GNNSBT ]@45MeV","preselection+UBT+[ AdvSBT+GNNSBT ]@45MeV+PID","preselection+UBT+[ AdvSBT+GNNSBT ]@45MeV+PID+inv_mass"]
 
 table_specs = [
-    ("Combined vetosystem efficiency (UBT x SBT)", combinedveto_tags),
-    ("Ordered cuts (BasicSBT@45 MeV threshold)", combined_Basic45),
-    ("Ordered cuts (BasicSBT@90 MeV threshold)", combined_Basic90),
-    ("Ordered cuts (AdvSBT@45 MeV threshold)",   combined_Adv45),
-    ("Ordered cuts (AdvSBT@90 MeV threshold)",   combined_Adv90),
-    ("Ordered cuts (GNNSBT@45 MeV threshold)",   combined_GNN45),
-    ("Ordered cuts (TOFSBT@45 MeV threshold)",  combined_TOF45),
-    ("Ordered cuts (TOFSBT@90 MeV threshold)",  combined_TOF90),
-    ("Ordered cuts ([AdvSBT + GNNSBT] @45MeV threshold)",  combined_45),
+    ("Combined vetosystem efficiency (UBT x SBT)"       , combinedveto_tags),
+    ("Ordered cuts (BasicSBT@45 MeV threshold)"         , combined_Basic45),
+    ("Ordered cuts (BasicSBT@90 MeV threshold)"         , combined_Basic90),
+    ("Ordered cuts (AdvSBT@45 MeV threshold)"           , combined_Adv45),
+    ("Ordered cuts (AdvSBT@90 MeV threshold)"           , combined_Adv90),
+    ("Ordered cuts (GNNSBT@45 MeV threshold)"           , combined_GNN45),
+    ("Ordered cuts ([ AdvSBT+GNNSBT ] @45MeV threshold)", combined_45),
 ]
 
 def fmt(value, denom, pct_fmt=".2f"):
@@ -149,14 +161,22 @@ df = load_csvs(pathlist, keyword)
 
 agg = df.groupby('tag')[['nCandidates','nEvents15y']].sum().sort_index()
 
-if options.dump:
-    raw_out = "merged_rows.csv"
-    agg_out = "aggregated_by_tag.csv"
-    df.to_csv(raw_out, index=False)
-    agg.reset_index().to_csv(agg_out, index=False)
+
+df = load_csvs(pathlist, keyword)
+
+agg = df.groupby('tag')[['nCandidates','nEvents15y']].sum().sort_index()
+
+if any("neuDIS" in p for p in pathlist):
     
-    print(f"[debug] Wrote raw merged rows → {raw_out}")
-    print(f"[debug] Wrote aggregated summary → {agg_out}")
+    if "simulated" not in agg.index:
+        raise RuntimeError("No 'simulated' row found; cannot compute scale.")
+    sim_nc_raw = float(agg.at["simulated", "nCandidates"])
+    if sim_nc_raw <= 0:
+        raise RuntimeError("Simulated nCandidates is zero; cannot compute scale.")
+    scale = (6000.0 * 19969) / sim_nc_raw
+    print("scalefactor",scale)
+    agg['nEvents15y'] = agg['nEvents15y'] * scale
+
 
 rec_nc, rec_n15 = agg.loc["reconstructed", ["nCandidates", "nEvents15y"]]
 sim_nc, sim_n15 = agg.loc["simulated", ["nCandidates", "nEvents15y"]]
@@ -209,41 +229,7 @@ for title, tags in table_specs:
 printed = set(['simulated','reconstructed']) | set(pre_tags) | set(veto_tags) | set(t for _,g in table_specs for t in g)
 others = [t for t in agg.index if t not in printed]
 if others: _block('Other cuts', others)
-"""
-#---------------------------------------------------------------------------------------------------------------------------------------
-# indexed menu clustered for further interactive debugging
-all_tags = []
-clustered = [('Event Stats',['simulated','reconstructed']),
-             ('Pre-Selection',pre_tags),('Veto',veto_tags)] + table_specs + [('Other cuts',others)]
-for _, tags in clustered:
-    for t in tags:
-        all_tags.append(t)
-menu = [[i,t,int(agg.at[t,'nCandidates']) if t in agg.index else 0, f"{agg.at[t,'nEvents15y']}" if t in agg.index else '0.000']
-        for i,t in enumerate(all_tags)]
-print(tabulate(menu, headers=['#','tag','nEvents generated','nEvents15y'], tablefmt='rounded_grid'))
-print()
 
-# prompt
-
-try:
-    choice = input('Enter tag number (blank to exit): ').strip()
-    if not choice: sys.exit(0)
-    idx = int(choice)
-    tag = all_tags[idx]
-except:
-    print('Invalid.'); sys.exit(1)
-print(f"Selected [{idx}]: {tag}\n")
-
-# lookup
-sel = df[(df.tag==tag)&(df.nCandidates>0)][['job',"nCandidates", "nEvents15y"]].reset_index(drop=True)
-if sel.empty:
-    print('No jobs with non-zero for',tag)
-else:
-    sel["nCandidates"] = sel["nCandidates"].apply(lambda x: fmt(x, rec_nc))
-    sel["nEvents15y"]  = sel["nEvents15y"].apply(lambda x: fmt(x, rec_n15))
-    print(tabulate(sel.values.tolist(), headers=['job','nEvents generated','nEvents15y'], tablefmt='rounded_grid', floatfmt='.2e'))
-
-#---------------------------------------------------------------------------------------------------------------------------------------
 """
 #---------------------------------------------------------------------------------------------------------------------------------------
 # indexed menu clustered for further interactive debugging
@@ -306,3 +292,4 @@ while True:
     else:
         break
 #---------------------------------------------------------------------------------------------------------------------------------------
+"""

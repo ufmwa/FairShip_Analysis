@@ -7,7 +7,6 @@ INUPUT:
 import sys
 sys.path.insert(0, "/eos/experiment/ship/user/anupamar/NN_data/ext_pkgs")
 import typing_extensions
-#print("✓ typing_extensions found:", typing_extensions.__file__)
 
 from argparse import ArgumentParser
 import numpy as np
@@ -31,9 +30,6 @@ parser.add_argument("-sg", "--signalpath", dest="signal_path", help="Path to Sig
 parser.add_argument("-bg", "--Backgroundpath", dest="bg_path", help="Path to MuonBack Files", required=False, default='/eos/experiment/ship/simulation/bkg/MuonBack_2024helium/8070735',type=str)
 parser.add_argument("--test" , dest="testing_code" , help="Run Test"              , required=False, action="store_true",default=False)
 options = parser.parse_args()
-
-#sys.path.insert(1, '/afs/cern.ch/user/a/anupamar/Analysis/')# caution: path[0] is reserved for script path (or '' in REPL)
-#from Tools import shipVeto_updatedwithadvSBT
 
 
 from tabulate import tabulate
@@ -68,8 +64,6 @@ class FalseVetoProbability:
 		self.signal_tree = self.f_signal.cbmsim
 		self.signal_entries =self.signal_tree.GetEntries()
 
-		#self.geo_file=os.path.join(f"{self.signal_path}/geofile_full.conical.Pythia8-TGeant4.root")
-		#self.load_geofile()
 		geofile_name=os.path.join(f"{self.signal_path}/geofile_full.conical.Pythia8-TGeant4.root")
 		self.geo_file = ROOT.TFile.Open(geofile_name,"read")
 					
@@ -115,47 +109,6 @@ class FalseVetoProbability:
 	        index=index+1
 	    return digiSBT		
 
-	def SBT_decision(self,Digi_SBTHits,mcParticle=None,detector='liquid',threshold=45,candidate=None):
-		
-		# if mcParticle >0, only count hits with this particle
-		# if mcParticle <0, do not count hits with this particle
-		################################
-
-		#hitSegments = 0
-
-		hitSegments = []
-		index = -1
-		fdetector = detector=='liquid'
-
-		for aDigi in Digi_SBTHits.values():
-		 
-		 index+=1 
-		 detID    = aDigi.GetDetectorID()
-
-		 if fdetector and detID > 999999:continue
-		 if not fdetector and not detID > 999999:continue 
-		 if mcParticle:
-		    found = False
-		    for mcP in self.sTree.digiSBT2MC[index]: 
-		     if mcParticle>0 and mcParticle != mcP : found=True
-		     if mcParticle<0 and abs(mcParticle) == mcP : found=True
-		    if found: continue
-		 
-		 position = aDigi.GetXYZ()
-		 ELoss    = aDigi.GetEloss()
-		 
-		 if ELoss>=threshold*0.001: 
-		 	self.h[f"Edep_{threshold}"].Fill(ELoss) 
-		 	hitSegments.append(index)#hitSegments += 1 
-		 
-		 #if aDigi.isValid(): hitSegments += 1 #threshold of 45 MeV per segment
-
-		w = (1-self.SBTefficiency)**len(hitSegments)  
-		veto = self.random.Rndm() > w
-
-		#print 'SBT :',hitSegments
-		return veto, w, hitSegments#hitSegments contain the index of the Digihit that causes the veto
-
 	def generate_event_time_in_spill(self,eventweight,starttime=0,endtime=10**9):
 		return np.array([self.random.Uniform(starttime, endtime) for _ in range(int(eventweight))])  
 	
@@ -191,9 +144,6 @@ class FalseVetoProbability:
 						self.embg_chain.Add(file_path)
 						print(f"{file_path} added to TChain")
 					
-					#if self.geo_file is None:
-					#	self.geo_file=os.path.join(f"{self.bg_path}/{job_folder}/geofile_full.conical.MuonBack-TGeant4.root")
-					#	self.load_geofile()
 					
 			except Exception as e:
 				print(f"build_embgchain error:{e}")
@@ -204,7 +154,7 @@ class FalseVetoProbability:
 		self.embg_chain.SetBranchStatus("vetoPoint*", 1)
 		self.embg_chain.SetBranchStatus("Digi_SBTHits*", 1)
 		self.embg_chain.SetBranchStatus("MCTrack*", 1)
-		self.embg_chain.SetCacheSize(10000000)  # 10 MB cache, adjust as needed
+		self.embg_chain.SetCacheSize(10000000) 
 		
 	def append_vetoPoints(self,vetoPoints,time_offset):
 
@@ -271,8 +221,6 @@ class FalseVetoProbability:
 		
 		veto_table=[]
 		
-		#veto_ship=shipVeto_updatedwithadvSBT.Task(self.signal_tree,self.fieldMaker)
-
 		import helperfunctions as analysis_toolkit #torch ROOT 6.32 crash workaround, import torch AFTER initialising ROOT
 
 		ctx       = analysis_toolkit.AnalysisContext(self.signal_tree, self.geo_file)
@@ -352,14 +300,11 @@ class FalseVetoProbability:
 
 				for threshold in self.threshold_list:
 
-					self.n_cases[self.iterationNr][threshold].add(signalNr)#+=1 #considering only one particle per event!
+					self.n_cases[self.iterationNr][threshold].add(signalNr) #+=1 #considering only one particle per event!
 
 					ExtSBT_veto=False #default value
 				
-					#veto[threshold], w[threshold], hitSegments[threshold]=self.SBT_decision(combined_Digi_SBTHits,threshold=threshold)
 					veto[threshold], w[threshold], hitSegments[threshold]=veto_ship.SBT_decision(Digi_SBTHits=combined_Digi_SBTHits.values(),threshold=threshold)
-
-					#if not len(bestHits): continue
 					
 					for hit in bestHits:
 						
@@ -367,20 +312,15 @@ class FalseVetoProbability:
 
 						if ELoss>=threshold*0.001:
 							ExtSBT_veto=True
-							#self.vetoed_cases[self.iterationNr][threshold].add(signalNr)#+=1 #this is now Advanced veto!
 							break #vetoed by one of the tracks, no need to repeat
 
-					#if AdvSBT_veto[threshold]==False:
 					GNN_veto, pBG = veto_ship.Veto_decision_GNNbinary_wdeltaT(threshold=0.6,offset=0)
 					
 					AdvSBT_veto[threshold]= GNN_veto or ExtSBT_veto #(if either options tells to veto it means veto)
 				
 					if AdvSBT_veto[threshold]:
-						self.vetoed_cases[self.iterationNr][threshold].add(signalNr)#+=1 #this is now Advanced veto!
-				
-				#if not AdvSBT_veto[45]:
-				#	eventDisplay(self.signal_event,f'notvetoedeventDisplay_{signalNr}',xs,ys,zs,candidate=signal,Digi_SBTHits=combined_Digi_SBTHits.values())
-				
+						self.vetoed_cases[self.iterationNr][threshold].add(signalNr)
+								
 				veto_table.append([
 									signalNr,  # Signal Event Index
 									AdvSBT_veto[0],

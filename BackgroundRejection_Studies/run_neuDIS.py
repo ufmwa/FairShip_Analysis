@@ -122,18 +122,31 @@ known, rest = p.parse_known_args(sys.argv[1:])
 
 
 # ---------- choose the analysis module -----------------------------------
-if known.channel == "leptonrho":
-    from selectioncheck_leptonrho import main
-    ipcut=250
-elif known.channel == "partialreco":
-    from selectioncheck import main
-    ipcut=250
-elif known.channel == "fullreco":
-    from selectioncheck import main
-    ipcut=10
-else:
-    raise RuntimeError("Bug: unhandled channel flag")
+from selectioncheck import main
 
-# Pass the parsed path plus any *remaining* CLI args to the core.
-sys.argv = [sys.argv[0], *rest, "-p", known.path]
-main(IP_CUT=ipcut,weight_function=calcweight_neuDIS) #no need to pass TDC correction anymore!
+print("Warning: final numbers may need rescaling, use merge.py for final results")
+
+if known.channel == "leptonrho":
+    
+    print(f"Partial Reco. (l ρ) channel Analysis starts now ")
+    ipcut=(10,250)
+    finalstate='semileptonic'
+
+elif known.channel == "partialreco":
+
+    print(f"Partial Reco. (l l ν) channel Analysis starts now ")
+    ipcut=250
+    finalstate='dileptonic'
+
+elif known.channel == "fullreco":
+
+    print(f"Fully Reco. (l π) channel Analysis starts now ")
+    ipcut=10
+    finalstate='semileptonic'
+
+else:
+    raise RuntimeError("Unknown channel flag")
+
+
+sys.argv = [sys.argv[0], *rest, "-p", known.path]# Pass the parsed path plus any remaining args
+main(IP_CUT=ipcut,weight_function=calcweight_neuDIS,finalstate=finalstate)

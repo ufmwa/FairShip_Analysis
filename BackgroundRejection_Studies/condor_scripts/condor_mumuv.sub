@@ -1,13 +1,13 @@
 executable          	= condor_signal.sh
 transfer_output_files 	= ""
-arguments             	= $(ClusterId) $(ProcId) $(Runnumber) /eos/experiment/ship/user/anupamar/BackgroundStudies/alt_v2/ /afs/cern.ch/user/a/anupamar/alt_v2/FairShip_Analysis/ mupi
+arguments             	= $(ClusterId) $(ProcId) $(Runnumber) /eos/experiment/ship/user/anupamar/BackgroundStudies/alt_v2/ /afs/cern.ch/user/a/anupamar/alt_v2/FairShip_Analysis/ mumuv
 notify_user				= anupama.reghunath@hu-berlin.de
 notification 			= Error
 
 ##############################################################################################################
-#error 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/error/mupi_$(ClusterId).$(ProcId).err
-#log 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/log/mupi_$(ClusterId).$(ProcId).log
-#output 				= /afs/cern.ch/work/a/anupamar/HTCondorfiles/output/mupi_$(ClusterId).$(ProcId).out
+#error 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/error/mumuv_$(ClusterId).$(ProcId).err
+#log 					= /afs/cern.ch/work/a/anupamar/HTCondorfiles/log/mumuv_$(ClusterId).$(ProcId).log
+#output 				= /afs/cern.ch/work/a/anupamar/HTCondorfiles/output/mumuv_$(ClusterId).$(ProcId).out
 ##############################################################################################################
 #request_memory 		= 50 GB
 #request_disk			= 4 GB
@@ -18,4 +18,4 @@ max_materialize 		= 20
 ##############################################################################################################
 +JobFlavour="longlunch"
 ##############################################################################################################
-queue Runnumber from joblists_mupi_EventCalc_ECN3_2024.csv
+queue Runnumber from joblists_2muv_EventCalc_ECN3_2024.csv
