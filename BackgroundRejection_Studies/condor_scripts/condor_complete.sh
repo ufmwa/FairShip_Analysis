@@ -12,9 +12,6 @@ KEYWORD=$6  #neuDIS or muonDIS
 
 source /cvmfs/ship.cern.ch/24.10/setUp.sh 
 
-export PYTHONPATH=/eos/experiment/ship/user/anupamar/NN_data/ext_pkgs:$PYTHONPATH
-echo "Extra packages ready from eos"
-
 source /afs/cern.ch/user/a/anupamar/HTCondor/configfiles/config_ECN3_2024.sh #alienv load FairShip/latest-master-release > config_<version>.sh
 echo 'config sourced'
 
