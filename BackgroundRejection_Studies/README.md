@@ -1,6 +1,6 @@
 # Background Studies using **FairShip**
 
-This repository contains scripts that were used to produce the **DIS background studies** presented in *[link to presentation]*.  
+This repository contains scripts that were used to produce the **DIS background studies** presented in the [34th SHiP Collaboration meeting](https://indico.cern.ch/event/1578670/contributions/6689107/attachments/3137319/5568518/Status_MuonDIS_nuDIS.pdf). 
 
 If you do not already have FairShip installed, please refer to the [FairShip README](https://github.com/ShipSoft/FairShip?tab=readme-ov-file#build-instructions-using-cvmfs) (Steps 1–4) for detailed installation and setup instructions on **lxplus**.
 
