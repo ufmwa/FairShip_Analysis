@@ -9,7 +9,7 @@ If you do not already have FairShip installed, please refer to the [FairShip REA
 ## 0. Preliminary Setup
 
 Before launching large-scale analyses, it is a good idea to verify that all scripts run correctly and that there are no missing dependencies.  
-Please install the following Python packages (required for the `GNNsbtveto` module used in the analysis):
+Please install the following Python packages (required for the `sbtveto` module used in the analysis):
 
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
