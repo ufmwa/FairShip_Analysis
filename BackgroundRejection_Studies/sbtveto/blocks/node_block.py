@@ -1,50 +1,68 @@
 from sbtveto.blocks.abstract_module import AbstractModule
 from sbtveto.blocks.aggregators import EdgesToNodesAggregator
 from sbtveto.blocks.aggregators import globals_to_nodes
-import torch
+
+try:
+    import torch
+    _TORCH_AVAILABLE = True
+except Exception:
+    torch = None
+    _TORCH_AVAILABLE = False
 
 
-class NodeBlock(AbstractModule):
-    def __init__(self, node_model_fn, use_sender_edges=True,
-                 use_receiver_edges=False, use_globals=True, use_nodes=True):
+if _TORCH_AVAILABLE:
 
-        super(NodeBlock, self).__init__()
+    class NodeBlock(AbstractModule):
+        def __init__(
+            self,
+            node_model_fn,
+            use_sender_edges=True,
+            use_receiver_edges=False,
+            use_globals=True,
+            use_nodes=True,
+        ):
 
-        self._use_sender_edges = use_sender_edges
-        self._use_receiver_edges = use_receiver_edges
-        self._use_globals = use_globals
-        self._use_nodes = use_nodes
+            super(NodeBlock, self).__init__()
 
-        with self._enter_variable_scope():
-            self._node_model = node_model_fn()
+            self._use_sender_edges = use_sender_edges
+            self._use_receiver_edges = use_receiver_edges
+            self._use_globals = use_globals
+            self._use_nodes = use_nodes
 
-            if self._use_receiver_edges:
-                self._received_edges_aggregator = EdgesToNodesAggregator()
+            with self._enter_variable_scope():
+                self._node_model = node_model_fn()
+
+                if self._use_receiver_edges:
+                    self._received_edges_aggregator = EdgesToNodesAggregator()
+
+                if self._use_sender_edges:
+                    self._sent_edges_aggregator = EdgesToNodesAggregator(use_sent_edges=True)
+
+        def forward(self, graph):
+            nodes_to_collect = []
 
             if self._use_sender_edges:
-                self._sent_edges_aggregator = EdgesToNodesAggregator(use_sent_edges=True)
+                nodes_to_collect.append(self._sent_edges_aggregator(graph))
 
-    def forward(self, graph):
-        nodes_to_collect = []
+            if self._use_receiver_edges:
+                nodes_to_collect.append(self._received_edges_aggregator(graph))
 
-        if self._use_sender_edges:
-            nodes_to_collect.append(self._sent_edges_aggregator(graph))
+            if self._use_nodes:
+                nodes_to_collect.append(graph.nodes)
 
+            if self._use_globals:
+                nodes_to_collect.append(globals_to_nodes(graph))
 
-        if self._use_receiver_edges:
-            nodes_to_collect.append(self._received_edges_aggregator(graph))
+            collected_nodes = torch.cat(nodes_to_collect, axis=-1)
+            updated_nodes = self._node_model(collected_nodes)
 
-        if self._use_nodes:
-            nodes_to_collect.append(graph.nodes)
-
-        if self._use_globals:
-            nodes_to_collect.append(globals_to_nodes(graph))
-
-
-        collected_nodes = torch.cat(nodes_to_collect, axis=-1)
-        updated_nodes = self._node_model(collected_nodes)
+            graph.update({"nodes": updated_nodes})
+            return graph
 
 
-        graph.update({'nodes': updated_nodes})
-        return graph
+else:
 
+    class NodeBlock(AbstractModule):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            raise RuntimeError("NodeBlock requires torch; caller should have gated this path.")

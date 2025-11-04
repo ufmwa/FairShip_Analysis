@@ -128,7 +128,7 @@ def helium_rhoL(event, track_index=0,
     return rho_he * L_he  # g/cm^2
 
 
-def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDIS=None,finalstate='None'):
+def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDIS=None,finalstate='None',use_gnn=None):
     
     """Main function to analyse the selection efficiency of different cuts."""
     
@@ -136,6 +136,7 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
     parser.add_argument("-p", "--path"  ,dest="path"         ,help="Path to simulation file",required=True)
     parser.add_argument("-i","--jobDir"  ,dest="jobDir"      ,help="job name of input file",  type=str,required=True)
     parser.add_argument(     "--test"    ,dest="testing_code",help="Run Test on 100 events of the input file"              ,  action="store_true")
+    parser.add_argument(     "--no-gnn"  ,dest="no_gnn"      ,help="Disable torch-based SBT GNN even if torch is available.", action="store_true")
 
     options = parser.parse_args()
 
@@ -153,8 +154,13 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
 
     geofile_name = glob.glob(f"{options.path}/{options.jobDir}/geofile_full.conical*.root")[0]
     geo_file = ROOT.TFile.Open(geofile_name,"read") 
+    use_gnn_flag = True if use_gnn is None else bool(use_gnn)
+    if getattr(options, "no_gnn", False):
+        use_gnn_flag = False
     
     import helperfunctions as analysis_toolkit #torch ROOT 6.32 crash workaround, import torch AFTER initialising ROOT
+
+    use_gnn_flag = use_gnn_flag and analysis_toolkit.torch_available()
 
     ctx       = analysis_toolkit.AnalysisContext(tree, geo_file)
 
@@ -528,7 +534,11 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
             selection_list['AdvSBT@45MeV'          ]   = not(AdvSBT45_veto) #Extrapolation SBT veto @45
             selection_list['AdvSBT@90MeV'          ]   = not(AdvSBT90_veto) #Extrapolation SBT veto @90
 
-            reject, pBG = veto_ship.Veto_decision_GNNbinary_wdeltaT(threshold=0.6,offset=offset)
+            reject, pBG = veto_ship.Veto_decision_GNNbinary_wdeltaT(
+                threshold=0.6,
+                offset=offset,
+                use_gnn=use_gnn_flag,
+            )
 
             selection_list['GNNSBT@45MeV'          ]   = not(reject) # specific GNN trained on neuDIS in He
 

@@ -1,6 +1,29 @@
 #!/usr/bin/env python
 """Toolkit for Analysis."""
 
+# ---- Optional torch/GNN guard (minimal) -------------------------------------
+try:
+    import torch  # noqa: F401
+    _TORCH_AVAILABLE = True
+except Exception:
+    _TORCH_AVAILABLE = False
+
+_TORCH_FALLBACK_WARNED = False
+
+
+def torch_available() -> bool:
+    return _TORCH_AVAILABLE
+
+
+def device_cpu_or_cuda():
+    if not _TORCH_AVAILABLE:
+        return None
+    import torch  # local import
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+# -----------------------------------------------------------------------------
+
 import numpy as np
 import pythia8_conf
 import ROOT
@@ -12,16 +35,80 @@ from tabulate import tabulate
 import geomGeant4
 from array import array
 import joblib
-import torch
-from sbtveto.model.nn_model import NN
-from sbtveto.util.inference import nn_output
-from sbtveto.model.gnn_model import EncodeProcessDecode
-from sbtveto.util.inference import gnn_output_binary,gnn_output_binary_wdeltaT
 #from torch_geometric.data import Data
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent
 _DATA_DIR  = _REPO_ROOT / "sbtveto" / "data"
+
+
+def sbt_veto_basic(tree, threshold_mev: float = 45.0) -> bool:
+    """
+    Basic SBT veto: return True if ANY SBT segment/cell deposits > threshold_mev.
+    Reuses the same digi collections used by the GNN input; silently skips
+    unexpected containers or access patterns.
+    """
+    threshold_mev = float(threshold_mev)
+
+    def _to_mev(value):
+        try:
+            val = float(value)
+        except Exception:
+            return None
+        if val < 1.0:  # likely stored in GeV
+            return val * 1e3
+        return val
+
+    def _light_yield_mev(hit):
+        if hasattr(hit, "GetLightYield"):
+            try:
+                ly = float(hit.GetLightYield())
+            except Exception:
+                return None
+            return ly
+        return None
+
+    for attr in (
+        "Digi_SBTHits",
+        "SBT",
+        "SBTPoint",
+        "vetoPoints",
+        "SBT_points",
+        "SBT_hits",
+    ):
+        hits = getattr(tree, attr, None)
+        if hits is None:
+            continue
+        try:
+            for hit in hits:
+                edep_mev = None
+                for getter in (
+                    "GetEloss",
+                    "GetEnergy",
+                    "E",
+                    "Edep",
+                    "GetEdep",
+                    "GetEnergyDeposit",
+                ):
+                    if not hasattr(hit, getter):
+                        continue
+                    try:
+                        value = getattr(hit, getter)()
+                    except TypeError:
+                        value = getattr(hit, getter)
+                    except Exception:
+                        continue
+                    edep_mev = _to_mev(value)
+                    if edep_mev is not None:
+                        break
+                if edep_mev is None:
+                    edep_mev = _light_yield_mev(hit)
+                if edep_mev is not None and edep_mev > threshold_mev:
+                    return True
+        except Exception:
+            continue
+    return False
+
 
 class AnalysisContext:
     def __init__(self, tree, geo_file):
@@ -689,85 +776,114 @@ class veto_tasks():
 
         return hits_in_tol, xs, ys, zs
 
-    def Veto_decision_GNNbinary_wdeltaT(self,candidate=None,threshold=0.6,offset=0,Digi_SBTHits=None):
+    def Veto_decision_GNNbinary_wdeltaT(
+        self,
+        candidate=None,
+        threshold=0.6,
+        offset=0,
+        Digi_SBTHits=None,
+        use_gnn=True,
+    ):
         """
         Binary SBT veto: returns (veto, P(background)) using energy, deltaT, vertex info.
         """
 
-        # --- Geometry ---
-        XYZ = np.load(_DATA_DIR / "SBT_new_geo_XYZ.npy")   # (3, 854)
-        
-        # --- Load Model ---
-        model = EncodeProcessDecode(
-            mlp_output_size=8,
-            global_op=1,
-            num_blocks=4
-        )
+        if use_gnn and torch_available():
+            try:
+                import torch
+                from sbtveto.model.gnn_model import EncodeProcessDecode
+                from sbtveto.util.inference import gnn_output_binary_wdeltaT
+            except Exception:
+                print("[SBT-GNN] torch inference failed → falling back to basic SBT veto (Edep>45 MeV)")
+            else:
+                # --- Geometry ---
+                XYZ = np.load(_DATA_DIR / "SBT_new_geo_XYZ.npy")   # (3, 854)
 
-        if not hasattr(self, "_gnn_bin_loaded"):
-            model.load_state_dict(torch.load(_DATA_DIR / "GNN_SBTveto_BINARY_45MeV_25epochs_wdeltaT.pth", map_location="cpu",weights_only=False))
-            model.eval()
-            self._gnn_bin_loaded = model
-        else:
-            model = self._gnn_bin_loaded
+                # --- Load Model ---
+                model = EncodeProcessDecode(
+                    mlp_output_size=8,
+                    global_op=1,
+                    num_blocks=4
+                )
 
-        # --- Prepare Input Features ---
-        detList = self.SBTcell_map()
-        energy_array = np.zeros(854, dtype=np.float32)
-        delta_t      = np.full(854, -9999.0, dtype=np.float32)
+                if not hasattr(self, "_gnn_bin_loaded"):
+                    model.load_state_dict(
+                        torch.load(
+                            _DATA_DIR / "GNN_SBTveto_BINARY_45MeV_25epochs_wdeltaT.pth",
+                            map_location="cpu",
+                            weights_only=False,
+                        )
+                    )
+                    model.eval()
+                    self._gnn_bin_loaded = model
+                else:
+                    model = self._gnn_bin_loaded
 
-        if Digi_SBTHits==None:
-            Digi_SBTHits=self.tree.Digi_SBTHits
+                # --- Prepare Input Features ---
+                detList = self.SBTcell_map()
+                energy_array = np.zeros(854, dtype=np.float32)
+                delta_t      = np.full(854, -9999.0, dtype=np.float32)
 
-        for aDigi in Digi_SBTHits:
+                if Digi_SBTHits==None:
+                    Digi_SBTHits=self.tree.Digi_SBTHits
 
-            if not self._cell_fired(aDigi.GetDetectorID()):
-                    continue
+                for aDigi in Digi_SBTHits:
 
-            detID = str(aDigi.GetDetectorID())
-            idx   = [i for i, v in detList.items() if v == detID][0]
-            if idx < 854:
-                energy_array[idx] = aDigi.GetEloss()
-                delta_t[idx] = aDigi.GetTDC()
+                    if not self._cell_fired(aDigi.GetDetectorID()):
+                            continue
 
-        # --- Candidate vertex info ---
-        if candidate is None:
-            candidate = self.tree.Particles[0]
-        
-        cand_pos = ROOT.TLorentzVector()
-        candidate.ProductionVertex(cand_pos)
-        vertex_time = self.sel.define_candidate_time(candidate,offset)  # already in ns
-        vertex_xyz  = np.array([cand_pos.X(), cand_pos.Y(), cand_pos.Z()], dtype=np.float32)
+                    detID = str(aDigi.GetDetectorID())
+                    idx   = [i for i, v in detList.items() if v == detID][0]
+                    if idx < 854:
+                        energy_array[idx] = aDigi.GetEloss()
+                        delta_t[idx] = aDigi.GetTDC()
 
-        # --- Δt = hit_time - vertex_time ---
-        delta_t = delta_t - vertex_time
+                # --- Candidate vertex info ---
+                if candidate is None:
+                    candidate = self.tree.Particles[0]
 
-        # --- Apply energy and Δt masking (threshold in MeV) ---
-        threshold_MeV = 45
-        low_energy_mask = energy_array < (threshold_MeV * 1e-3)
-        bad_deltat_mask = (delta_t < -150) | (delta_t > 150)
+                cand_pos = ROOT.TLorentzVector()
+                candidate.ProductionVertex(cand_pos)
+                vertex_time = self.sel.define_candidate_time(candidate,offset)  # already in ns
+                vertex_xyz  = np.array([cand_pos.X(), cand_pos.Y(), cand_pos.Z()], dtype=np.float32)
 
-        invalid_mask = low_energy_mask | bad_deltat_mask
-        energy_array[invalid_mask] = 0.0
-        delta_t[invalid_mask]      = -9999
+                # --- Δt = hit_time - vertex_time ---
+                delta_t = delta_t - vertex_time
 
-        # --- Check if any valid cell remains ---
-        if not np.any(energy_array > 0.0):
-            #print("\t\tNo fired cell → classify as signal and return")
-            return False, 0.0
+                # --- Apply energy and Δt masking (threshold in MeV) ---
+                threshold_MeV = 45
+                low_energy_mask = energy_array < (threshold_MeV * 1e-3)
+                bad_deltat_mask = (delta_t < -150) | (delta_t > 150)
 
-        # --- Construct input matrix: energy, deltaT, vertexX,vertexY,vertexZ ---
-        features = np.stack([
-            energy_array,
-            delta_t,
-            np.full(854, vertex_xyz[0], dtype=np.float32),
-            np.full(854, vertex_xyz[1], dtype=np.float32),
-            np.full(854, vertex_xyz[2], dtype=np.float32)
-        ], axis=1)  # shape: (854, 5)
+                invalid_mask = low_energy_mask | bad_deltat_mask
+                energy_array[invalid_mask] = 0.0
+                delta_t[invalid_mask]      = -9999
 
-        inputmatrix = features[np.newaxis, :, :]  # shape: (1, 854, 5)
+                # --- Check if any valid cell remains ---
+                if not np.any(energy_array > 0.0):
+                    #print("\t\tNo fired cell → classify as signal and return")
+                    return False, 0.0
 
-        # --- Run binary GNN decision ---
-        veto, prob_bg = gnn_output_binary_wdeltaT(model, inputmatrix, XYZ, threshold)
-        
-        return veto, prob_bg
+                # --- Construct input matrix: energy, deltaT, vertexX,vertexY,vertexZ ---
+                features = np.stack([
+                    energy_array,
+                    delta_t,
+                    np.full(854, vertex_xyz[0], dtype=np.float32),
+                    np.full(854, vertex_xyz[1], dtype=np.float32),
+                    np.full(854, vertex_xyz[2], dtype=np.float32)
+                ], axis=1)  # shape: (854, 5)
+
+                inputmatrix = features[np.newaxis, :, :]  # shape: (1, 854, 5)
+
+                # --- Run binary GNN decision ---
+                veto, prob_bg = gnn_output_binary_wdeltaT(model, inputmatrix, XYZ, threshold)
+
+                return veto, prob_bg
+
+        global _TORCH_FALLBACK_WARNED
+        if use_gnn and not torch_available() and not _TORCH_FALLBACK_WARNED:
+            print("[SBT-GNN] torch not available → falling back to basic SBT veto (Edep>45 MeV)")
+            _TORCH_FALLBACK_WARNED = True
+
+        veto_basic = sbt_veto_basic(self.tree, threshold_mev=45.0)
+        return veto_basic, 0.0

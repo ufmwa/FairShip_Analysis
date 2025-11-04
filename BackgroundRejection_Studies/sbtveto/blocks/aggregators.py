@@ -1,30 +1,46 @@
 from sbtveto.blocks.abstract_module import AbstractModule
-import torch
 
-from torch_scatter import scatter_add
-from torch_scatter import scatter_mean
+try:
+    import torch
+    from torch_scatter import scatter_add
+    from torch_scatter import scatter_mean
+    _TORCH_AVAILABLE = True
+except Exception:
+    torch = None
+    scatter_add = None
+    scatter_mean = None
+    _TORCH_AVAILABLE = False
+
+
+def _require_torch():
+    if not _TORCH_AVAILABLE:
+        raise RuntimeError("torch is required for sbtveto.blocks.aggregators; caller should gate this path.")
 
 def globals_to_nodes(graph):
+    _require_torch()
     return graph.graph_globals[graph.batch]
 
 def receiver_nodes_to_edges(graph):
-
+    _require_torch()
     return graph.nodes[graph.receivers, :]
 
 def sender_nodes_to_edges(graph):
-
+    _require_torch()
     return graph.nodes[graph.senders, :]
 
 def globals_to_edges(graph):
+    _require_torch()
     return graph.graph_globals[graph.edgepos]
 
 class EdgesToNodesAggregator(AbstractModule):
     """Agregates sent or received edges into the corresponding nodes."""
+
     def __init__(self, use_sent_edges=False):
         super(EdgesToNodesAggregator, self).__init__()
         self._use_sent_edges = use_sent_edges
 
     def forward(self, graph):
+        _require_torch()
         if graph.nodes is not None and graph.nodes.size()[0] is not None:
             num_nodes = graph.nodes.size()[0]
         else:
@@ -35,8 +51,6 @@ class EdgesToNodesAggregator(AbstractModule):
         return scatter_add(graph.edges, indices, out=out, dim=0)
 
 
-
-
 class EdgesToGlobalsAggregator(AbstractModule):
     def __init__(self, num_graphs=None):
         super(EdgesToGlobalsAggregator, self).__init__()
@@ -44,6 +58,7 @@ class EdgesToGlobalsAggregator(AbstractModule):
         self._num_graphs = 1
 
     def forward(self, graph):
+        _require_torch()
         if self._num_graphs is None:
             out = torch.sum(graph.edges, 0)
         else:
@@ -58,6 +73,7 @@ class NodesToGlobalsAggregator(AbstractModule):
         self._num_graphs = 1
 
     def forward(self, graph):
+        _require_torch()
         if self._num_graphs is None:
             out = torch.sum(graph.nodes, 0)
         else:

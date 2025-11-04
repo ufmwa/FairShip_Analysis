@@ -1,12 +1,27 @@
 import numpy as np
-import torch
-from torch_geometric.nn import knn
-from torch_geometric.data import Data
-from sbtveto.model.nn_model import NN
 import joblib
+
+try:
+    import torch
+    from torch_geometric.nn import knn
+    from torch_geometric.data import Data
+    _TORCH_AVAILABLE = True
+except Exception:
+    torch = None
+    knn = None
+    Data = None
+    _TORCH_AVAILABLE = False
+
+from sbtveto.model.nn_model import NN
+
+
+def _require_torch():
+    if not _TORCH_AVAILABLE:
+        raise RuntimeError("torch is required for sbtveto.util.inference; caller should gate this path.")
 
 
 def nn_output(model, data, scalar):
+    _require_torch()
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
@@ -26,6 +41,7 @@ def adjacency(n_dau):
 
 
 def gnn_output(model, x, sbt_xyz):
+    _require_torch()
 
     Ncells = sbt_xyz.shape[1]  
 
@@ -112,6 +128,7 @@ def gnn_output(model, x, sbt_xyz):
     return output_graph.graph_globals, sbt_decision, classification
 
 def gnn_output_binary(model, inputmatrix, XYZ, threshold=0.6):
+    _require_torch()
     """
     Run a 1-output GNN and return (veto_decision, P(background)).
     Works with the same 'inputmatrix' + 'XYZ' interface as gnn_output().
@@ -121,6 +138,7 @@ def gnn_output_binary(model, inputmatrix, XYZ, threshold=0.6):
     return (prob_bg > threshold), prob_bg
 
 def gnn_output_deltaT(model, x, sbt_xyz):
+    _require_torch()
     """
     Runs GNN on input x of shape (1, 854, 5): [E, Δt, vx, vy, vz].
     Also adds an additional phi feature onto the deltaT
@@ -204,6 +222,7 @@ def gnn_output_deltaT(model, x, sbt_xyz):
 
 
 def gnn_output_binary_wdeltaT(model, inputmatrix, XYZ, threshold=0.6):
+    _require_torch()
     """
     Run a 1-output GNN and return (veto_decision, P(background)).
     Works with the same 'inputmatrix' + 'XYZ' interface as gnn_output().

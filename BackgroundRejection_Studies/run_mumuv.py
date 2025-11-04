@@ -8,10 +8,18 @@ import os,ROOT
 import pandas as pd
 import shipunit as u
 import numpy as np
+
+from helperfunctions import torch_available
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("-p", "--path", default="/eos/experiment/ship/user/anupamar/Signal_EventCalc/2muv/12946374/HNL_1.000e+00_7.133e+04_4.808e-02_7.692e-01_1.827e-01",help="Path to simulation file") #mumunu 1 GeV
+p.add_argument("--no-gnn", action="store_true",
+               help="Disable torch-based SBT GNN even if torch is available.")
 
 known, rest = p.parse_known_args(sys.argv[1:])
+
+USE_GNN = (not known.no_gnn) and torch_available()
+if not USE_GNN:
+    print("[SBT-GNN] torch not available or --no-gnn set → using basic SBT veto (Edep>45 MeV)")
 
 def define_time_till_vtx(event):
 	
@@ -89,4 +97,4 @@ print(f"Partial Reco. (l l ν) channel Analysis starts now ")
 ipcut=250
 finalstate='dileptonic'
 
-main(IP_CUT=ipcut,weight_function=define_weight_EventCalc,fix_candidatetime=define_time_till_vtx,finalstate=finalstate)
+main(IP_CUT=ipcut,weight_function=define_weight_EventCalc,fix_candidatetime=define_time_till_vtx,finalstate=finalstate,use_gnn=USE_GNN)

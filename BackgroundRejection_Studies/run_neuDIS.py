@@ -7,6 +7,8 @@ import ROOT
 import shipunit as u
 import sys, argparse
 
+from helperfunctions import torch_available
+
 
 def calcweight_neuDIS(event,SHiP_running=15,N_gen=6000*19969,w_DIS=None):#6k events per job, 19.993k jobs #For Iaroslava productions 2024,N_gen=100000*98): #Each file has 100k events each change N_gen according to files(1) used for analysis, and 98 successful jobs
     
@@ -107,6 +109,8 @@ def TDC_correction(event,candidate):#resolve time bug in neuDIS production. to b
 p = argparse.ArgumentParser(description=__doc__)
 #p.add_argument("-p", "--path", default="/eos/experiment/ship/user/Iaroslava/train_sample_N2024_big/")
 p.add_argument("-p", "--path", default="/eos/experiment/ship/simulation/bkg/NeutrinoDIS_2024helium/10864335/")
+p.add_argument("--no-gnn", action="store_true",
+               help="Disable torch-based SBT GNN even if torch is available.")
 
 g = p.add_mutually_exclusive_group(required=True)
 
@@ -119,6 +123,10 @@ g.add_argument("--fullreco", dest="channel", action="store_const", const="fullre
 
 
 known, rest = p.parse_known_args(sys.argv[1:])
+
+USE_GNN = (not known.no_gnn) and torch_available()
+if not USE_GNN:
+    print("[SBT-GNN] torch not available or --no-gnn set → using basic SBT veto (Edep>45 MeV)")
 
 
 # ---------- choose the analysis module -----------------------------------
@@ -149,4 +157,4 @@ else:
 
 
 sys.argv = [sys.argv[0], *rest, "-p", known.path]# Pass the parsed path plus any remaining args
-main(IP_CUT=ipcut,weight_function=calcweight_neuDIS,finalstate=finalstate)
+main(IP_CUT=ipcut,weight_function=calcweight_neuDIS,finalstate=finalstate,use_gnn=USE_GNN)

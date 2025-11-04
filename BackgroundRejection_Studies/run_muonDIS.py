@@ -6,6 +6,8 @@
 import sys, argparse
 import pandas as pd
 
+from helperfunctions import torch_available
+
 def calcweight_muonDIS(event,SHiP_running=15,w_DIS=None):
     """Calculate event weight in 15 years."""    
     
@@ -35,6 +37,8 @@ def calcweight_muonDIS(event,SHiP_running=15,w_DIS=None):
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("-p", "--path", default="/eos/experiment/ship/simulation/bkg/MuonDIS_2024helium/8070735")
+p.add_argument("--no-gnn", action="store_true",
+               help="Disable torch-based SBT GNN even if torch is available.")
 
 g = p.add_mutually_exclusive_group(required=True)
 
@@ -46,6 +50,10 @@ g.add_argument("--fullreco", dest="channel", action="store_const", const="fullre
                help="Run studies for the fully reconstructed (l π) channel")
 
 known, rest = p.parse_known_args(sys.argv[1:])
+
+USE_GNN = (not known.no_gnn) and torch_available()
+if not USE_GNN:
+    print("[SBT-GNN] torch not available or --no-gnn set → using basic SBT veto (Edep>45 MeV)")
 
 
 dis = (pd.read_csv(known.path+"/ndis_summary.csv")                       #contains the number of DIS in helium /vessel for each muon tagged to the eventNr and job_id; easy lookup but ugly fix!
@@ -93,4 +101,4 @@ else:
     raise RuntimeError("Unknown channel flag")
 
 sys.argv = [sys.argv[0], *rest, "-p", known.path] # Pass the parsed path plus any remaining args
-main(IP_CUT=ipcut,weight_function=calcweight_muonDIS,fix_nDIS=ndis_rescale,finalstate=finalstate)
+main(IP_CUT=ipcut,weight_function=calcweight_muonDIS,fix_nDIS=ndis_rescale,finalstate=finalstate,use_gnn=USE_GNN)
