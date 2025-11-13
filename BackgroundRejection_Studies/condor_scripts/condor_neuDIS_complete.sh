@@ -4,18 +4,18 @@
 #ClusterId=	$1
 #ProcId=$2
 JOB=$3
-EOSDIR=$4
+OUTDIR=$4
 SCRIPTDIR=$5
 
 #--------------------------------------------------------------------------------------
 
-source /cvmfs/ship.cern.ch/24.10/setUp.sh 
+# source /cvmfs/ship.cern.ch/24.10/setUp.sh 
 
-export PYTHONPATH=/eos/experiment/ship/user/anupamar/NN_data/ext_pkgs:$PYTHONPATH
-echo "Extra packages ready from eos"
+# export PYTHONPATH=/eos/experiment/ship/user/anupamar/NN_data/ext_pkgs:$PYTHONPATH
+# echo "Extra packages ready from eos"
 
-source /afs/cern.ch/user/a/anupamar/HTCondor/configfiles/config_ECN3_2024.sh #alienv load FairShip/latest-master-release > config_<version>.sh
-echo 'config sourced'
+# source /afs/cern.ch/user/a/anupamar/HTCondor/configfiles/config_ECN3_2024.sh #alienv load FairShip/latest-master-release > config_<version>.sh
+# echo 'config sourced'
 
 #######################################################################################
 
@@ -25,9 +25,9 @@ if [ $? -ne 0 ]; then
     exit 1
 fi    
 
-mkdir -p "$EOSDIR/neuDIS_leptonrho/$JOB"
+mkdir -p "$OUTDIR/neuDIS/leptonrho/$JOB"
 
-OUTPUTDIR="$EOSDIR/neuDIS_leptonrho/$JOB"
+OUTPUTDIR="$OUTDIR/neuDIS/leptonrho/$JOB"
 
 xrdcp selectionparameters_*.root root://eospublic.cern.ch/"$OUTPUTDIR"/
 xrdcp selection_summary_*.csv root://eospublic.cern.ch/"$OUTPUTDIR"/
