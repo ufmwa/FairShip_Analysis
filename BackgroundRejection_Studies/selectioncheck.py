@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Script to evaluate signal selection on different samples (Studies separated into : all,vesselCase,heliumCase) """
+"""Script to evaluate signal selection on different samples (Studies separated into : all,vesselCase,heliumCase, caveCase) """
 
 #-----------------------------------------------------------------------------------------------------------
 
@@ -40,6 +40,8 @@ def ip_category(ip_elem):
         return "vesselCase"
     if ip_elem.startswith("DecayVacuum"):
         return "heliumCase"
+    if ip_elem.startswith(("cave")):
+        return "caveCase"
     
     return "all"       
 
@@ -307,7 +309,7 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
         combined_GNN45,   combined_other
     ))
 
-    cats = ("all", "vesselCase", "heliumCase")
+    cats = ("all", "vesselCase", "heliumCase", "caveCase")
 
     #--------------------------------------------------------------------------------------------------------------
 

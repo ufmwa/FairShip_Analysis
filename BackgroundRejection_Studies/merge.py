@@ -36,6 +36,7 @@ group2 = parser.add_mutually_exclusive_group(required=True)
 group2.add_argument("--all"        , dest="keyword", action= "store_const",const="all"          ,help="Merge job summaries for interactions anywhere")
 group2.add_argument("--vesselCase" , dest="keyword", action= "store_const",const="vesselCase"   ,help="Merge job summaries for interactions only in the SBT vessel")
 group2.add_argument("--heliumCase" , dest="keyword", action= "store_const",const="heliumCase"   ,help="Merge job summaries for interactions only in the decay volume (He medium)")
+group2.add_argument("--caveCase"   , dest="keyword", action= "store_const",const="caveCase"     ,help="Merge job summaries for interactions only in the cave (air)")
 
 
 options = parser.parse_args()
