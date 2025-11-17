@@ -23,36 +23,32 @@ SCRIPTDIR="$3"  # Repo-Wurzel, die 'BackgroundRejection_Studies/' enthält
 
 # --- Hilfsfunktion: 1 Job x 1 Kanal ---
 run_one() {
-  local JOB="$1"         # z.B. job_000123 -> geht an -i
-  local CHANNEL="$2"     # partialreco | fullreco | leptonrho
+  local JOB="$1"
+  local CHANNEL="$2"
   local FLAG
   case "$CHANNEL" in
-    partialreco) FLAG="--partialreco" ;;
-    fullreco)    FLAG="--fullreco" ;;
-    leptonrho)   FLAG="--leptonrho" ;;
+    partialreco) FLAG="--partialreco --case caveCase" ;;
+    fullreco)    FLAG="--fullreco    --case caveCase" ;;
     *) echo "Unknown channel: $CHANNEL" >&2; return 2 ;;
   esac
 
   echo ">>> [$JOB][$CHANNEL] start $(date)"
-  # Aufräumen, falls vom letzten Lauf was rumliegt:
   rm -f selectionparameters_*.root selection_summary_*.csv
 
-  # Python-Analyse
   if ! python "$SCRIPTDIR/BackgroundRejection_Studies/run_neuDIS.py" \
-        -p "$INPDIR" -i "$JOB" "$FLAG" ; then
+        -p "$INPDIR" -i "$JOB" $FLAG ; then   # <--- ohne Anführungszeichen
     echo "!!! [$JOB][$CHANNEL] FAILED" >&2
     return 3
   fi
 
-  # Ergebnisse einsortieren (Merge-kompatible Struktur!)
   local OUTDIR="$OUTBASE/neuDIS/$CHANNEL/$JOB"
   mkdir -p "$OUTDIR"
-  # Pro Job werden mehrere Kategorien geschrieben: all / heliumCase / vesselCase
   cp selectionparameters_*.root selection_summary_*.csv "$OUTDIR"/ || true
   rm -f selectionparameters_*.root selection_summary_*.csv
 
   echo "<<< [$JOB][$CHANNEL] done  $(date)"
 }
+
 
 # --- Logging ---
 LOGDIR="$OUTBASE/logs"

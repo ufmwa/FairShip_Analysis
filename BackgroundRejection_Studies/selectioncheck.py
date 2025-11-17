@@ -135,16 +135,32 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
     """Main function to analyse the selection efficiency of different cuts."""
     
     parser = ArgumentParser(description=__doc__)
-    parser.add_argument("-p", "--path"  ,dest="path"         ,help="Path to simulation file",required=True)
-    parser.add_argument("-i","--jobDir"  ,dest="jobDir"      ,help="job name of input file",  type=str,required=True)
-    parser.add_argument(     "--test"    ,dest="testing_code",help="Run Test on 100 events of the input file"              ,  action="store_true")
+    parser.add_argument("-p", "--path"  ,dest="path"   ,help="Path to simulation file",required=True)
+    parser.add_argument("-i","--jobDir" ,dest="jobDir" ,help="job name of input file",  type=str,required=True)
+    parser.add_argument(     "--test"   ,dest="testing_code",
+                             help="only analyse the first 1000 events of the input file",
+                             action="store_true")
+    # NEU: nur bestimmte IP-Kategorie auswerten
+    parser.add_argument(
+        "--case",
+        dest="case",
+        choices=("all", "vesselCase", "heliumCase", "caveCase"),
+        help="Limit analysis to a single interaction-point category",
+    )
 
     options = parser.parse_args()
+
 
     if isinstance(IP_CUT, (list, tuple)):        # [10, 250) case
         ip_low, ip_high = sorted(IP_CUT)
     else:                                        # [0, 250) case
         ip_low, ip_high = 0.0, float(IP_CUT)
+
+    # NEU: welche Kategorien wirklich benutzt werden sollen
+    if options.case is None:
+        cats = ("all", "vesselCase", "heliumCase", "caveCase")
+    else:
+        cats = (options.case,)
 
     print(f"IP_CUT set as [{ip_low},{ip_high})\n\n")
     
@@ -309,8 +325,6 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
         combined_GNN45,   combined_other
     ))
 
-    cats = ("all", "vesselCase", "heliumCase", "caveCase")
-
     #--------------------------------------------------------------------------------------------------------------
 
     # Trees + branch buffers to store (x,y,z,w) for passing candidates
@@ -412,7 +426,8 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
         scalefactor={}
         
         for c in {"all", cat}:
-            
+            if c not in cats:
+                continue
             if c not in scalefactor:         
 
                 if fix_nDIS:
@@ -631,7 +646,8 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
             #-------------------------------------------------------------------------
 
             for c in {"all", cat}:
-                
+                if c not in cats:
+                    continue
                 pre = f"{c}_"
 
                 event_weight_rescaled=event_weight*scalefactor[c]
@@ -662,6 +678,8 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
                 if selection_list.get(tag, False):
                     
                     for c2 in {"all", cat}:
+                        if c2 not in cats:
+                            continue
                         x, y, z, w, ipx, ipy, ipz = pos_bufs[c2][tag]
                         x[0]   = signal_pos.X()
                         y[0]   = signal_pos.Y()
@@ -678,6 +696,8 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
 
                 if passed:
                     for c in {"all", cat}:
+                        if c not in cats:
+                            continue
                         pass_stats[c][selection_name][event_nr] = event_weight * scalefactor[c]
 
     for cat in cats:

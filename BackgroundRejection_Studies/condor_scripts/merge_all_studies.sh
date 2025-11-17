@@ -63,9 +63,9 @@ OUTPUTDIR=$3
 
 echo "Merging neuDIS now .."
 
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --partialreco --all --path $EOSDIR> "$OUTPUTDIR/neuDIS_partialreco_all.txt"
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --partialreco --vesselCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_partialreco_vesselCase.txt"
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --partialreco --heliumCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_partialreco_heliumCase.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --partialreco --all --path $EOSDIR> "$OUTPUTDIR/neuDIS_partialreco_all.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --partialreco --vesselCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_partialreco_vesselCase.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --partialreco --heliumCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_partialreco_heliumCase.txt"
 python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --partialreco --caveCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_partialreco_caveCase.txt"
 
 # python "$SCRIPTDIR/BackgroundRejection_Studies/surviving_xyzplots.py" --neuDIS --partialreco --all --path $EOSDIR
@@ -76,9 +76,9 @@ python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --partialreco 
 
 #--------------------------------------------------------------------------------------
 
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --fullreco --all --path $EOSDIR> "$OUTPUTDIR/neuDIS_fullreco_all.txt"
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --fullreco --vesselCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_fullreco_vesselCase.txt"
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --fullreco --heliumCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_fullreco_heliumCase.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --fullreco --all --path $EOSDIR> "$OUTPUTDIR/neuDIS_fullreco_all.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --fullreco --vesselCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_fullreco_vesselCase.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --fullreco --heliumCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_fullreco_heliumCase.txt"
 python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --fullreco --caveCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_fullreco_caveCase.txt"
 
 # python "$SCRIPTDIR/BackgroundRejection_Studies/surviving_xyzplots.py" --neuDIS --fullreco --all --path $EOSDIR
@@ -89,10 +89,10 @@ python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --fullreco --c
 
 #--------------------------------------------------------------------------------------
 
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --leptonrho --all --path $EOSDIR> "$OUTPUTDIR/neuDIS_leptonrho_all.txt"
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --leptonrho --vesselCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_leptonrho_vesselCase.txt"
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --leptonrho --heliumCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_leptonrho_heliumCase.txt"
-python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --leptonrho --caveCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_leptonrho_caveCase.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --leptonrho --all --path $EOSDIR> "$OUTPUTDIR/neuDIS_leptonrho_all.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --leptonrho --vesselCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_leptonrho_vesselCase.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --leptonrho --heliumCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_leptonrho_heliumCase.txt"
+# python "$SCRIPTDIR/BackgroundRejection_Studies/merge.py" --neuDIS --leptonrho --caveCase --path $EOSDIR> "$OUTPUTDIR/neuDIS_leptonrho_caveCase.txt"
 
 # python "$SCRIPTDIR/BackgroundRejection_Studies/surviving_xyzplots.py" --neuDIS --leptonrho --all --path $EOSDIR
 # python "$SCRIPTDIR/BackgroundRejection_Studies/surviving_xyzplots.py" --neuDIS --leptonrho --vesselCase --path $EOSDIR

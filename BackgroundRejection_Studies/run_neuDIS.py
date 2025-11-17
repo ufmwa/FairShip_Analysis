@@ -108,6 +108,14 @@ p = argparse.ArgumentParser(description=__doc__)
 #p.add_argument("-p", "--path", default="/eos/experiment/ship/user/Iaroslava/train_sample_N2024_big/")
 p.add_argument("-p", "--path", default="/eos/experiment/ship/simulation/bkg/NeutrinoDIS_2024helium/10864335/")
 
+p.add_argument(
+    "--case",
+    dest="case",
+    choices=("all", "vesselCase", "heliumCase", "caveCase"),
+    default="all",
+    help="Interaction point category: global ('all'), SBT ('vesselCase') or decay volume ('heliumCase').",
+)
+
 g = p.add_mutually_exclusive_group(required=True)
 
 g.add_argument("--leptonrho",   dest="channel", action="store_const", const="leptonrho",
@@ -149,4 +157,8 @@ else:
 
 
 sys.argv = [sys.argv[0], *rest, "-p", known.path]# Pass the parsed path plus any remaining args
+
+if getattr(known, "case", "all") != "all":
+    sys.argv += ["--case", known.case]
+
 main(IP_CUT=ipcut,weight_function=calcweight_neuDIS,finalstate=finalstate)
