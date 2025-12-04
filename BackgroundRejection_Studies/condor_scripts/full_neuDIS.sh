@@ -1,42 +1,60 @@
 #!/usr/bin/env bash
-# Läuft alle neuDIS-Kanäle über alle job_* in einem Eingabeordner.
-# Usage:
-#   bash neuDIS_alljobs_local.sh <INPDIR> <OUTBASE> <SCRIPTDIR>
-# Example:
-#   bash neuDIS_alljobs_local.sh \
-# /work/nouachem/FairShip_Analysis/BackgroundRejection_Studies/condor_scripts/full_neuDIS.sh
-    # /storage/9/rquishpe/ship/NeutrinoDIS_2024helium_noCavern/test
-    # /ceph/nouachem/Analysis_Sebastian/test
-    # /work/nouachem/FairShip_Analysis
+# Läuft neuDIS über alle job_* in <INPDIR> – nur partialreco & fullreco.
 
-set -u
-set -o pipefail
+set -euo pipefail
 
 if [ $# -ne 3 ]; then
   echo "Usage: $0 <INPDIR> <OUTBASE> <SCRIPTDIR>" >&2
+  echo "  INPDIR   = INPUT mit job_* (Sim-Ausgabe von run_simScript/ship_reco)"
+  echo "  OUTBASE  = Zielbasis für Analyse-Outputs (hier entsteht neuDIS/.../job_*)"
+  echo "  SCRIPTDIR= Repo-Root mit BackgroundRejection_Studies/"
   exit 1
 fi
 
-INPDIR="$1"     # enthält viele job_* Ordner -> geht an run_neuDIS.py -p
-OUTBASE="$2"    # lokaler Output-Basisordner für Ergebnisse (statt EOSDIR)
-SCRIPTDIR="$3"  # Repo-Wurzel, die 'BackgroundRejection_Studies/' enthält
+INPDIR="$1"
+OUTBASE="$2"
+SCRIPTDIR="$3"
 
-# --- Hilfsfunktion: 1 Job x 1 Kanal ---
+echo "[INFO] INPDIR   = $INPDIR"
+echo "[INFO] OUTBASE  = $OUTBASE"
+echo "[INFO] SCRIPTDIR= $SCRIPTDIR"
+
+# --- job_* überall bis Tiefe 2 finden (deckt .../<run>/job_* und .../<grp>/<run>/job_* ab)
+mapfile -t JOBPATHS < <(find "$INPDIR" -mindepth 1 -maxdepth 2 -type d -name 'job_*' | sort)
+if [ ${#JOBPATHS[@]} -eq 0 ]; then
+  echo "[ERROR] Keine job_* Ordner unter $INPDIR (bis 2 Ebenen) gefunden." >&2
+  exit 1
+fi
+echo "[INFO] Found ${#JOBPATHS[@]} job folders"
+
+LOGDIR="$OUTBASE/logs"
+mkdir -p "$LOGDIR"
+
 run_one() {
-  local JOB="$1"
-  local CHANNEL="$2"
+  local JOB="$1"         # job_XXXXXX
+  local JOBPARENT="$2"   # Verzeichnis, das den job_* enthält
+  local CHANNEL="$3"     # partialreco | fullreco
+
   local FLAG
   case "$CHANNEL" in
-    partialreco) FLAG="--partialreco --case caveCase" ;;
-    fullreco)    FLAG="--fullreco    --case caveCase" ;;
+    partialreco) FLAG="--partialreco" ;;
+    fullreco)    FLAG="--fullreco" ;;
     *) echo "Unknown channel: $CHANNEL" >&2; return 2 ;;
   esac
+
+  # Sanity: existiert eine Geometrie im Input?
+  if ! compgen -G "$JOBPARENT/$JOB/geofile_full*.root" >/dev/null && \
+     ! compgen -G "$JOBPARENT/$JOB/*_rec.root" >/dev/null; then
+    echo "[WARN] $JOB: keine Geometrie/REC im Input ($JOBPARENT/$JOB) – skip."
+    return 0
+  fi
 
   echo ">>> [$JOB][$CHANNEL] start $(date)"
   rm -f selectionparameters_*.root selection_summary_*.csv
 
+  # WICHTIG: $FLAG NICHT quoten (kann mehrere Tokens enthalten)
   if ! python "$SCRIPTDIR/BackgroundRejection_Studies/run_neuDIS.py" \
-        -p "$INPDIR" -i "$JOB" $FLAG ; then   # <--- ohne Anführungszeichen
+        -p "$JOBPARENT" -i "$JOB" $FLAG ; then
     echo "!!! [$JOB][$CHANNEL] FAILED" >&2
     return 3
   fi
@@ -45,34 +63,22 @@ run_one() {
   mkdir -p "$OUTDIR"
   cp selectionparameters_*.root selection_summary_*.csv "$OUTDIR"/ || true
   rm -f selectionparameters_*.root selection_summary_*.csv
-
-  echo "<<< [$JOB][$CHANNEL] done  $(date)"
+  echo "<<< [$JOB][$CHANNEL] done $(date)"
 }
-
-
-# --- Logging ---
-LOGDIR="$OUTBASE/logs"
-mkdir -p "$LOGDIR"
-
-# --- Alle job_* durchgehen ---
-shopt -s nullglob
-JOBPATHS=("$INPDIR"/job_*)
-if [ ${#JOBPATHS[@]} -eq 0 ]; then
-  echo "Keine job_* Ordner in $INPDIR gefunden." >&2
-  exit 1
-fi
 
 for JP in "${JOBPATHS[@]}"; do
   [ -d "$JP" ] || continue
   JOB="$(basename "$JP")"
+  JOBPARENT="$(dirname "$JP")"
   {
     echo "===== $JOB ====="
-    run_one "$JOB" partialreco
-    run_one "$JOB" fullreco
-    run_one "$JOB" leptonrho
+    run_one "$JOB" "$JOBPARENT" partialreco
+    run_one "$JOB" "$JOBPARENT" fullreco
     echo "===== $JOB DONE ====="
   } > "$LOGDIR/${JOB}.log" 2>&1
 done
 
-echo "Alle Jobs fertig. Reports/Logs unter: $LOGDIR"
-echo "Ergebnisse unter: $OUTBASE/neuDIS/{partialreco,fullreco,leptonrho}/job_*/"
+echo "Alle Jobs fertig. Logs: $LOGDIR"
+echo "Ergebnisse: $OUTBASE/neuDIS/{partialreco,fullreco}/job_*/"
+
+

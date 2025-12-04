@@ -8,7 +8,7 @@ import shipunit as u
 import sys, argparse
 
 
-def calcweight_neuDIS(event,SHiP_running=15,N_gen=6000*19969,w_DIS=None):#6k events per job, 19.993k jobs #For Iaroslava productions 2024,N_gen=100000*98): #Each file has 100k events each change N_gen according to files(1) used for analysis, and 98 successful jobs
+def calcweight_neuDIS(event,SHiP_running=15,N_gen=22*10000,w_DIS=None):#6k events per job, 19.993k jobs #For Iaroslava productions 2024,N_gen=100000*98): #Each file has 100k events each change N_gen according to files(1) used for analysis, and 98 successful jobs
     
     if w_DIS==None:
         w_DIS    =  event.MCTrack[0].GetWeight()

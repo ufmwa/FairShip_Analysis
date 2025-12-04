@@ -167,16 +167,16 @@ df = load_csvs(pathlist, keyword)
 
 agg = df.groupby('tag')[['nCandidates','nEvents15y']].sum().sort_index()
 
-if any("neuDIS" in p for p in pathlist):
+# if any("neuDIS" in p for p in pathlist):
     
-    if "simulated" not in agg.index:
-        raise RuntimeError("No 'simulated' row found; cannot compute scale.")
-    sim_nc_raw = float(agg.at["simulated", "nCandidates"])
-    if sim_nc_raw <= 0:
-        raise RuntimeError("Simulated nCandidates is zero; cannot compute scale.")
-    scale = (6000.0 * 19969) / sim_nc_raw
-    print("scalefactor",scale)
-    agg['nEvents15y'] = agg['nEvents15y'] * scale
+#     if "simulated" not in agg.index:
+#         raise RuntimeError("No 'simulated' row found; cannot compute scale.")
+#     sim_nc_raw = float(agg.at["simulated", "nCandidates"])
+#     if sim_nc_raw <= 0:
+#         raise RuntimeError("Simulated nCandidates is zero; cannot compute scale.")
+#     scale = (6000.0 * 19969) / sim_nc_raw
+#     print("scalefactor",scale)
+#     agg['nEvents15y'] = agg['nEvents15y'] * scale
 
 
 rec_nc, rec_n15 = agg.loc["reconstructed", ["nCandidates", "nEvents15y"]]
