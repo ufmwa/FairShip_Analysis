@@ -23,7 +23,6 @@ group1.add_argument("--erho",dest="foldername",   const="signalEventCalc/erho"  
 group1.add_argument("--murho",dest="foldername",  const="signalEventCalc/murho"  ,help="signal (μ ρ) studies",   action="store_const")
 group1.add_argument("--mumuv",dest="foldername",  const="signalEventCalc/mumuv"  ,help="signal (μ μ ν) studies", action="store_const")
 
-
 group3 = parser.add_mutually_exclusive_group(required=False)
 
 group3.add_argument("--fullreco"    , dest="analysis_channel", action= "store_const",const="fullreco"    ,help="Background studies for fully reco. (l π) channel")
@@ -55,15 +54,43 @@ if not options.analysis_channel:
 
 foldername=f'{options.foldername}/{options.analysis_channel}'
 
-if options.foldername=="muonDIS":
-    pathlist = [
-        f'{main_path}/{foldername}/SBT',
-        f'{main_path}/{foldername}/Tr',
-    ]
+root = Path(main_path)
+
+# Unterstützt beide Varianten:
+# 1) $INDIR/<foldername>/
+# 2) $INDIR/<irgendwas>/<foldername>/
+base_dirs = []
+
+direct = root / foldername
+if direct.is_dir():
+    base_dirs.append(direct)
+
+base_dirs += [p for p in root.glob(f"*/{foldername}") if p.is_dir()]
+
+# Duplikate entfernen + stabil sortieren
+base_dirs = sorted(set(base_dirs))
+
+if not base_dirs:
+    raise FileNotFoundError(
+        f"Kein passender Ordner gefunden für '{foldername}' unter:\n"
+        f"  - {root / foldername}\n"
+        f"  - {root}/*/{foldername}"
+    )
+
+# Jetzt wie bisher in die eigentlichen Suchpfade umwandeln
+pathlist = []
+if options.foldername == "muonDIS":
+    for b in base_dirs:
+        for sub in ("SBT", "Tr"):
+            p = b / sub
+            if p.is_dir():
+                pathlist.append(str(p))
 else:
-    pathlist = [
-                f'{main_path}/{foldername}/'
-                ]
+    pathlist = [str(b) for b in base_dirs]
+
+print("Suche CSVs in folgenden Pfaden:")
+for p in pathlist:
+    print("  ", p)
 
 print(pathlist)
 #main_path='/eos/experiment/ship/user/anupamar/BackgroundStudies/corrected/'
@@ -166,16 +193,16 @@ df = load_csvs(pathlist, keyword)
 
 agg = df.groupby('tag')[['nCandidates','nEvents15y']].sum().sort_index()
 
-if any("neuDIS" in p for p in pathlist):
+# if any("neuDIS" in p for p in pathlist):
     
-    if "simulated" not in agg.index:
-        raise RuntimeError("No 'simulated' row found; cannot compute scale.")
-    sim_nc_raw = float(agg.at["simulated", "nCandidates"])
-    if sim_nc_raw <= 0:
-        raise RuntimeError("Simulated nCandidates is zero; cannot compute scale.")
-    scale = (6000.0 * 19969) / sim_nc_raw
-    print("scalefactor",scale)
-    agg['nEvents15y'] = agg['nEvents15y'] * scale
+#     if "simulated" not in agg.index:
+#         raise RuntimeError("No 'simulated' row found; cannot compute scale.")
+#     sim_nc_raw = float(agg.at["simulated", "nCandidates"])
+#     if sim_nc_raw <= 0:
+#         raise RuntimeError("Simulated nCandidates is zero; cannot compute scale.")
+#     scale = (6000.0 * 19969) / sim_nc_raw
+#     print("scalefactor",scale)
+#     agg['nEvents15y'] = agg['nEvents15y'] * scale
 
 
 rec_nc, rec_n15 = agg.loc["reconstructed", ["nCandidates", "nEvents15y"]]

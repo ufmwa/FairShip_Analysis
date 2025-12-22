@@ -117,15 +117,33 @@ if not options.analysis_channel:
 
 foldername=f'{options.foldername}/{options.analysis_channel}'
 
+root = Path(main_path)
+
+# akzeptiert beide Strukturen:
+# 1) $INDIR/<foldername>/...
+# 2) $INDIR/<irgendwas>/<foldername>/...
+base_dirs = []
+direct = root / foldername
+if direct.is_dir():
+    base_dirs.append(direct)
+
+base_dirs += [p for p in root.glob(f"*/{foldername}") if p.is_dir()]
+
+# Duplikate entfernen + stabil sortieren
+base_dirs = sorted(set(base_dirs))
+
 if options.foldername=="muonDIS":
-    pathlist = [
-        f'{main_path}/{foldername}/SBT',
-        f'{main_path}/{foldername}/Tr',
-    ]
+    pathlist = []
+    for b in base_dirs:
+        sbt = b / "SBT"
+        tr  = b / "Tr"
+        if sbt.is_dir():
+            pathlist.append(str(sbt))
+        if tr.is_dir():
+            pathlist.append(str(tr))
 else:
-    pathlist = [
-                f'{main_path}/{foldername}/'
-                ]
+    pathlist = [str(b) for b in base_dirs]
+
 
 # Output directory
 outdir = Path(f"plots_{foldername}")
