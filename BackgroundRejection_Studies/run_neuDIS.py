@@ -7,9 +7,11 @@ import ROOT
 import shipunit as u
 import sys, argparse
 
+N_gen_input = 10000*10000
 
-def calcweight_neuDIS(event,SHiP_running=15,N_gen=6000*19969,w_DIS=None):#6k events per job, 19.993k jobs #For Iaroslava productions 2024,N_gen=100000*98): #Each file has 100k events each change N_gen according to files(1) used for analysis, and 98 successful jobs
+def calcweight_neuDIS(event,SHiP_running=15,N_gen=N_gen_input,w_DIS=None):#6k events per job, 19.993k jobs #For Iaroslava productions 2024,N_gen=100000*98): #Each file has 100k events each change N_gen according to files(1) used for analysis, and 98 successful jobs
     
+
     if w_DIS==None:
         w_DIS    =  event.MCTrack[0].GetWeight()
     
@@ -149,4 +151,5 @@ else:
 
 
 sys.argv = [sys.argv[0], *rest, "-p", known.path]# Pass the parsed path plus any remaining args
+print("The total number of events in this simulation is set to :", N_gen_input) #debugging, so the N_gen input is visible in the output
 main(IP_CUT=ipcut,weight_function=calcweight_neuDIS,finalstate=finalstate)

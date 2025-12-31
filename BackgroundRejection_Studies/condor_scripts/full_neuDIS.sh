@@ -1,31 +1,50 @@
 #!/usr/bin/env bash
-# Läuft alle neuDIS-Kanäle über alle job_* in einem Eingabeordner.
+# Läuft neuDIS-Kanäle über viele job_* in einem Eingabeordner.
+# Optional: nur Jobs aus einer Jobliste-Datei abarbeiten.
+# Optional: nur einen Kanal rechnen (partialreco|fullreco|leptonrho).
+#
 # Usage:
-#   bash neuDIS_alljobs_local.sh <INPDIR> <OUTBASE> <SCRIPTDIR>
-# Example:
-#   bash neuDIS_alljobs_local.sh \
-# /work/nouachem/FairShip_Analysis/BackgroundRejection_Studies/condor_scripts/full_neuDIS.sh
-    # /storage/9/rquishpe/ship/NeutrinoDIS_2024helium_noCavern/test
-    # /ceph/nouachem/Analysis_Sebastian/test
-    # /work/nouachem/FairShip_Analysis
+#   bash full_neuDIS.sh <INPDIR> <OUTBASE> <SCRIPTDIR> [JOBLIST] [CHANNEL]
+#
+# JOBLIST:
+#   Datei mit einem Job pro Zeile, z.B.:
+#     job_1770
+#     9950
+#   Leere Zeilen und Zeilen beginnend mit # werden ignoriert.
+#
+# CHANNEL:
+#   partialreco | fullreco | leptonrho | all
+#   Default: all
 
 set -u
 set -o pipefail
 
-if [ $# -ne 3 ]; then
-  echo "Usage: $0 <INPDIR> <OUTBASE> <SCRIPTDIR>" >&2
+if [ $# -lt 3 ] || [ $# -gt 5 ]; then
+  echo "Usage: $0 <INPDIR> <OUTBASE> <SCRIPTDIR> [JOBLIST] [CHANNEL]" >&2
   exit 1
 fi
 
-INPDIR="$1"     # enthält viele job_* Ordner -> geht an run_neuDIS.py -p
-OUTBASE="$2"    # lokaler Output-Basisordner für Ergebnisse (statt EOSDIR)
-SCRIPTDIR="$3"  # Repo-Wurzel, die 'BackgroundRejection_Studies/' enthält
+INPDIR="$1"
+OUTBASE="$2"
+SCRIPTDIR="$3"
+JOBLIST="${4:-}"
+CHANNEL_SEL="${5:-all}"
+
+# --- Kanal-Auswahl prüfen ---
+case "$CHANNEL_SEL" in
+  all|partialreco|fullreco|leptonrho) ;;
+  *)
+    echo "Invalid CHANNEL '$CHANNEL_SEL'. Use: all|partialreco|fullreco|leptonrho" >&2
+    exit 1
+    ;;
+esac
 
 # --- Hilfsfunktion: 1 Job x 1 Kanal ---
 run_one() {
-  local JOB="$1"         # z.B. job_000123 -> geht an -i
-  local CHANNEL="$2"     # partialreco | fullreco | leptonrho
+  local JOB="$1"
+  local CHANNEL="$2"
   local FLAG
+
   case "$CHANNEL" in
     partialreco) FLAG="--partialreco" ;;
     fullreco)    FLAG="--fullreco" ;;
@@ -34,21 +53,17 @@ run_one() {
   esac
 
   echo ">>> [$JOB][$CHANNEL] start $(date)"
-  # Aufräumen, falls vom letzten Lauf was rumliegt:
   rm -f selectionparameters_*.root selection_summary_*.csv
 
-  # Python-Analyse
   if ! python "$SCRIPTDIR/BackgroundRejection_Studies/run_neuDIS.py" \
         -p "$INPDIR" -i "$JOB" "$FLAG" ; then
     echo "!!! [$JOB][$CHANNEL] FAILED" >&2
     return 3
   fi
 
-  # Ergebnisse einsortieren (Merge-kompatible Struktur!)
   local OUTDIR="$OUTBASE/neuDIS/$CHANNEL/$JOB"
   mkdir -p "$OUTDIR"
-  # Pro Job werden mehrere Kategorien geschrieben: all / heliumCase / vesselCase
-  cp selectionparameters_*.root selection_summary_*.csv "$OUTDIR"/ || true
+  cp -f selectionparameters_*.root selection_summary_*.csv "$OUTDIR"/ 2>/dev/null || true
   rm -f selectionparameters_*.root selection_summary_*.csv
 
   echo "<<< [$JOB][$CHANNEL] done  $(date)"
@@ -58,22 +73,73 @@ run_one() {
 LOGDIR="$OUTBASE/logs"
 mkdir -p "$LOGDIR"
 
-# --- Alle job_* durchgehen ---
-shopt -s nullglob
-JOBPATHS=("$INPDIR"/job_*)
-if [ ${#JOBPATHS[@]} -eq 0 ]; then
-  echo "Keine job_* Ordner in $INPDIR gefunden." >&2
-  exit 1
+# --- Jobliste bauen ---
+declare -a JOBS=()
+
+if [ -n "$JOBLIST" ]; then
+  if [ ! -f "$JOBLIST" ]; then
+    echo "JOBLIST file not found: $JOBLIST" >&2
+    exit 1
+  fi
+
+  while IFS= read -r JOB || [[ -n "$JOB" ]]; do
+    JOB="${JOB//$'\r'/}"          # CR entfernen
+    JOB="${JOB%%#*}"              # Kommentare abschneiden
+    JOB="$(echo "$JOB" | xargs)"  # whitespace trim
+    [[ -z "$JOB" ]] && continue
+
+    # optional: akzeptiere auch "9950" und mache "job_9950" draus
+    [[ "$JOB" =~ ^[0-9]+$ ]] && JOB="job_$JOB"
+
+    if [[ -d "$INPDIR/$JOB" ]]; then
+      JOBS+=("$JOB")
+    else
+      echo "Skipping (not found in INPDIR): $JOB" >&2
+    fi
+  done < "$JOBLIST"
+
+  if [ ${#JOBS[@]} -eq 0 ]; then
+    echo "No valid jobs found in JOBLIST: $JOBLIST" >&2
+    exit 1
+  fi
+  echo "Using JOBLIST '$JOBLIST' with ${#JOBS[@]} jobs."
+else
+  shopt -s nullglob
+  JOBPATHS=("$INPDIR"/job_*)
+  if [ ${#JOBPATHS[@]} -eq 0 ]; then
+    echo "Keine job_* Ordner in $INPDIR gefunden." >&2
+    exit 1
+  fi
+  for JP in "${JOBPATHS[@]}"; do
+    [ -d "$JP" ] || continue
+    JOBS+=("$(basename "$JP")")
+  done
+  echo "Discovered ${#JOBS[@]} jobs in $INPDIR."
 fi
 
-for JP in "${JOBPATHS[@]}"; do
-  [ -d "$JP" ] || continue
-  JOB="$(basename "$JP")"
+# --- Welche Kanäle laufen? ---
+declare -a CHANNELS=()
+if [ "$CHANNEL_SEL" = "all" ]; then
+  CHANNELS=(partialreco fullreco leptonrho)
+else
+  CHANNELS=("$CHANNEL_SEL")
+fi
+
+echo "Channels to run: ${CHANNELS[*]}"
+
+# --- Jobs abarbeiten ---
+for JOB in "${JOBS[@]}"; do
+  JP="$INPDIR/$JOB"
+  if [ ! -d "$JP" ]; then
+    echo "WARN: job dir missing, skip: $JP" >&2
+    continue
+  fi
+
   {
     echo "===== $JOB ====="
-    run_one "$JOB" partialreco
-    run_one "$JOB" fullreco
-    run_one "$JOB" leptonrho
+    for CH in "${CHANNELS[@]}"; do
+      run_one "$JOB" "$CH"
+    done
     echo "===== $JOB DONE ====="
   } > "$LOGDIR/${JOB}.log" 2>&1
 done
