@@ -11,7 +11,13 @@ import sys
 
 parser = ArgumentParser(description=__doc__)
 
-parser.add_argument("--path", dest="main_path",help="parent path", required=False, default='/eos/experiment/ship/user/anupamar/BackgroundStudies/alt_v2/')
+parser.add_argument(
+    "--path",
+    dest="main_path",
+    nargs="+",
+    default=["/eos/experiment/ship/user/anupamar/BackgroundStudies/alt_v2/"],
+    help="one or more parent paths (space-separated)"
+)
 
 group1 = parser.add_mutually_exclusive_group(required=True)
 
@@ -35,6 +41,9 @@ group2 = parser.add_mutually_exclusive_group(required=True)
 group2.add_argument("--all"        , dest="keyword", action= "store_const",const="all"          ,help="Merge job summaries for interactions anywhere")
 group2.add_argument("--vesselCase" , dest="keyword", action= "store_const",const="vesselCase"   ,help="Merge job summaries for interactions only in the SBT vessel")
 group2.add_argument("--heliumCase" , dest="keyword", action= "store_const",const="heliumCase"   ,help="Merge job summaries for interactions only in the decay volume (He medium)")
+group2.add_argument("--caveCase"   , dest="keyword", action= "store_const",const="caveCase"     ,help="Merge job summaries for interactions only in air (cave case)")
+group2.add_argument("--ubtCase"    , dest="keyword", action= "store_const",const="ubtCase"      ,help="Merge job summaries for interactions only in the upstream tagger (UBT case)")
+
 
 
 options = parser.parse_args()
@@ -46,36 +55,34 @@ if (options.foldername=="muonDIS" or options.foldername=="neuDIS") and options.a
 
 keyword = options.keyword
 
-main_path=options.main_path
-
-
 if not options.analysis_channel:
     options.analysis_channel=''
 
 foldername=f'{options.foldername}/{options.analysis_channel}'
 
-root = Path(main_path)
+roots = [Path(p) for p in options.main_path]
 
 # Unterstützt beide Varianten:
 # 1) $INDIR/<foldername>/
 # 2) $INDIR/<irgendwas>/<foldername>/
 base_dirs = []
 
-direct = root / foldername
-if direct.is_dir():
-    base_dirs.append(direct)
+base_dirs = []
+for root in roots:
+    direct = root / foldername
+    if direct.is_dir():
+        base_dirs.append(direct)
 
-base_dirs += [p for p in root.glob(f"*/{foldername}") if p.is_dir()]
+    base_dirs += [p for p in root.glob(f"*/{foldername}") if p.is_dir()]
 
-# Duplikate entfernen + stabil sortieren
 base_dirs = sorted(set(base_dirs))
 
 if not base_dirs:
     raise FileNotFoundError(
-        f"Kein passender Ordner gefunden für '{foldername}' unter:\n"
-        f"  - {root / foldername}\n"
-        f"  - {root}/*/{foldername}"
+        f"Kein passender Ordner gefunden für '{foldername}' unter:\n" +
+        "\n".join([f"  - {r / foldername}\n  - {r}/*/{foldername}" for r in roots])
     )
+
 
 # Jetzt wie bisher in die eigentlichen Suchpfade umwandeln
 pathlist = []

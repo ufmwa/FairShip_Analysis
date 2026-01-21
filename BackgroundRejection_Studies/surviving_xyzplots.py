@@ -26,24 +26,24 @@ def load_style():
 
 def add_geometry(ax_zx, ax_zy, ax_xy, show_detectors=True):
     """Draw the SHiP DV views exactly like your eventDisplay_mini."""
-    z_start, z_end = -2500, 2500
+    z_start, z_end = -2478, 2522
 
     # x vs z (top view)
-    ax_zx.add_patch(Polygon([(z_start,-74),(z_start,74),(z_end,224),(z_end,-224)],
+    ax_zx.add_patch(Polygon([(z_start,-50),(z_start,50),(z_end,200),(z_end,-200)],
                             fill=True, facecolor='#e6f2fa', edgecolor='#6baed6',
                             linewidth=2, linestyle='-'))
     # y vs z (side view)
-    ax_zy.add_patch(Polygon([(z_start,-159),(z_start,159),(z_end,324),(z_end,-324)],
+    ax_zy.add_patch(Polygon([(z_start,-135),(z_start,135),(z_end,300),(z_end,-300)],
                             fill=True, facecolor='#e6f2fa', edgecolor='#6baed6',
                             linewidth=2, linestyle='-'))
     # x vs y (back view): mirrored trapezoids + connectors
-    back = [(-74,-159),(-74,159),(-224,324),(-224,-324)]
+    back  = [(-50,-135),(-50,135),(-200,300),(-200,-300)]
     backR = [(-x,y) for x,y in back]
     ax_xy.add_patch(Polygon(back,  fill=True, facecolor='#e6f2fa', edgecolor='#6baed6', linewidth=2))
     ax_xy.add_patch(Polygon(backR, fill=True, facecolor='#e6f2fa', edgecolor='#6baed6', linewidth=2))
-    ax_xy.add_patch(Polygon([(-74,159),(74,159),(224,324),(-224,324)],
+    ax_xy.add_patch(Polygon([(-50,135),(50,135),(200,300),(-200,300)],
                             fill=True, facecolor='#e6f2fa', edgecolor='#6baed6', linewidth=2))
-    ax_xy.add_patch(Polygon([(-74,-159),(74,-159),(224,-324),(-224,-324)],
+    ax_xy.add_patch(Polygon([(-50,-135),(50,-135),(200,-300),(-200,-300)],
                             fill=True, facecolor='#e6f2fa', edgecolor='#6baed6', linewidth=2))
 
     if not show_detectors:
@@ -70,7 +70,14 @@ def safe_filename(s: str) -> str:
 
 parser = ArgumentParser(description=__doc__)
 
-parser.add_argument("--path", dest="main_path",help="parent path", required=False, default='/eos/experiment/ship/user/anupamar/BackgroundStudies/alt_v2/')
+parser.add_argument(
+    "--path",
+    dest="main_path",
+    nargs="+",
+    help="one or more parent paths (space-separated)",
+    required=False,
+    default=['/eos/experiment/ship/user/anupamar/BackgroundStudies/alt_v2/']
+)
 
 group1 = parser.add_mutually_exclusive_group(required=True)
 
@@ -95,6 +102,7 @@ group2 = parser.add_mutually_exclusive_group(required=True)
 group2.add_argument("--all"        , dest="keyword", action= "store_const",const="all"          ,help="Merge job summaries for interactions anywhere")
 group2.add_argument("--vesselCase" , dest="keyword", action= "store_const",const="vesselCase"   ,help="Merge job summaries for interactions only in the SBT vessel")
 group2.add_argument("--heliumCase" , dest="keyword", action= "store_const",const="heliumCase"   ,help="Merge job summaries for interactions only in the decay volume (He medium)")
+group2.add_argument("--caveCase"   , dest="keyword", action= "store_const",const="caveCase"     ,help="Merge job summaries for interactions only in air (cave case)")
 
 parser.add_argument("--test", dest="testing_code", action="store_true", default=False, help="Process a small subset of files (quick check).")
 
@@ -109,7 +117,7 @@ main_path = options.main_path
 
 keyword = options.keyword
 
-main_path=options.main_path
+main_path = options.main_path
 
 
 if not options.analysis_channel:
@@ -117,17 +125,22 @@ if not options.analysis_channel:
 
 foldername=f'{options.foldername}/{options.analysis_channel}'
 
-root = Path(main_path)
+# Allow one or more parent paths
+if isinstance(main_path, str):
+    main_paths = [main_path]
+else:
+    main_paths = list(main_path)
 
 # akzeptiert beide Strukturen:
 # 1) $INDIR/<foldername>/...
 # 2) $INDIR/<irgendwas>/<foldername>/...
 base_dirs = []
-direct = root / foldername
-if direct.is_dir():
-    base_dirs.append(direct)
+for root in [Path(p) for p in main_paths]:
+    direct = root / foldername
+    if direct.is_dir():
+        base_dirs.append(direct)
 
-base_dirs += [p for p in root.glob(f"*/{foldername}") if p.is_dir()]
+    base_dirs += [p for p in root.glob(f"*/{foldername}") if p.is_dir()]
 
 # Duplikate entfernen + stabil sortieren
 base_dirs = sorted(set(base_dirs))
@@ -167,6 +180,18 @@ def collect_groups(pathlist, keyword, limit_files=None):
     files = sorted(files)
     if limit_files:
         files = files[:limit_files]
+
+    print(f"Searching keyword={keyword}")
+    print("Pathlist:")
+    for b in pathlist:
+        print("  ", b)
+
+    print(f"Found {len(files)} files:")
+    for p in files[:3]:
+        print("   ", p)
+    if len(files) > 3:
+        print("   ...")
+
 
     if not files:
         print(f"(no selectionparameters_{keyword}.root found under {pathlist})")

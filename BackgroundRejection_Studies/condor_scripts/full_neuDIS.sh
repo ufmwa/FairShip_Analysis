@@ -4,7 +4,7 @@
 # Optional: nur einen Kanal rechnen (partialreco|fullreco|leptonrho).
 #
 # Usage:
-#   bash full_neuDIS.sh <INPDIR> <OUTBASE> <SCRIPTDIR> [JOBLIST] [CHANNEL]
+#   bash full_neuDIS.sh <INPDIR> <OUTBASE> <SCRIPTDIR> [JOBLIST] [CHANNEL] [CASE]
 #
 # JOBLIST:
 #   Datei mit einem Job pro Zeile, z.B.:
@@ -15,12 +15,16 @@
 # CHANNEL:
 #   partialreco | fullreco | leptonrho | all
 #   Default: all
+#
+# CASE:
+#   all | vesselCase | heliumCase | caveCase | ubtCase
+#   Default: all
 
 set -u
 set -o pipefail
 
-if [ $# -lt 3 ] || [ $# -gt 5 ]; then
-  echo "Usage: $0 <INPDIR> <OUTBASE> <SCRIPTDIR> [JOBLIST] [CHANNEL]" >&2
+if [ $# -lt 3 ] || [ $# -gt 6 ]; then
+  echo "Usage: $0 <INPDIR> <OUTBASE> <SCRIPTDIR> [JOBLIST] [CHANNEL] [CASE]" >&2
   exit 1
 fi
 
@@ -29,12 +33,22 @@ OUTBASE="$2"
 SCRIPTDIR="$3"
 JOBLIST="${4:-}"
 CHANNEL_SEL="${5:-all}"
+CASE_SEL="${6:-all}"
 
 # --- Kanal-Auswahl prüfen ---
 case "$CHANNEL_SEL" in
   all|partialreco|fullreco|leptonrho) ;;
   *)
     echo "Invalid CHANNEL '$CHANNEL_SEL'. Use: all|partialreco|fullreco|leptonrho" >&2
+    exit 1
+    ;;
+esac
+
+# --- Case-Auswahl prüfen ---
+case "$CASE_SEL" in
+  all|vesselCase|heliumCase|caveCase|ubtCase) ;;
+  *)
+    echo "Invalid CASE '$CASE_SEL'. Use: all|vesselCase|heliumCase|caveCase|ubtCase" >&2
     exit 1
     ;;
 esac
@@ -52,11 +66,16 @@ run_one() {
     *) echo "Unknown channel: $CHANNEL" >&2; return 2 ;;
   esac
 
+  local CASEARGS=()
+  if [ "$CASE_SEL" != "all" ]; then
+    CASEARGS=(--case "$CASE_SEL")
+  fi
+
   echo ">>> [$JOB][$CHANNEL] start $(date)"
   rm -f selectionparameters_*.root selection_summary_*.csv
 
   if ! python "$SCRIPTDIR/BackgroundRejection_Studies/run_neuDIS.py" \
-        -p "$INPDIR" -i "$JOB" "$FLAG" ; then
+        -p "$INPDIR" -i "$JOB" "$FLAG" "${CASEARGS[@]}" ; then
     echo "!!! [$JOB][$CHANNEL] FAILED" >&2
     return 3
   fi

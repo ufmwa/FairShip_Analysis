@@ -14,11 +14,18 @@ Typical use for your hypothesis:
 Output:
 - PNGs in --outputdir
 - Optional JSON summary
+
+Tip:
+- Provide --detector-boxes-csv (or keep subsystem_boxes.csv nearby) to auto-show Target/MuonShield
+  and enable auto-limits that include upstream components.
+- Supported detector boxes CSV schemas:
+  * full-bbox: subsystem,xmin_cm,xmax_cm,ymin_cm,ymax_cm,zmin_cm,zmax_cm
+  * z-only:   subsystem,zmin_cm,zmax_cm (x/y inferred from axis limits)
 """
 
-import os, glob, re, json, random
+import os, glob, re, json, random, csv, sys
 from pathlib import Path
-from argparse import ArgumentParser
+from argparse import ArgumentParser, BooleanOptionalAction
 from collections import Counter, defaultdict
 
 import ROOT
@@ -26,8 +33,104 @@ ROOT.gROOT.SetBatch(True)
 
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-from matplotlib.patches import Polygon, Rectangle
-import re
+from matplotlib.patches import Polygon, Rectangle, Patch
+from matplotlib.lines import Line2D
+
+DEFAULT_LIMITS = {
+    "zlim": [-3500, 3800],
+    "xlim": [-2000, 2000],
+    "ylim": [-2000, 2000],
+    "xylim_x": [-2000, 2000],
+    "xylim_y": [-2000, 2000],
+}
+
+# ---------------- load geometry from geofile via (subsystem_boxes.C) ----------------
+
+def load_subsystem_boxes_csv(path):
+    """
+    Expected columns:
+      subsystem,xmin_cm,xmax_cm,ymin_cm,ymax_cm,zmin_cm,zmax_cm,...
+      or subsystem,zmin_cm,zmax_cm,...
+    """
+    boxes = {}
+    with open(path, "r", newline="") as fh:
+        r = csv.DictReader(fh)
+        fieldnames = [f.strip() for f in (r.fieldnames or [])]
+        has_full = "xmin_cm" in fieldnames
+        has_z = "zmin_cm" in fieldnames and "zmax_cm" in fieldnames
+        if not has_z:
+            raise RuntimeError(f"Detector boxes CSV missing zmin_cm/zmax_cm: {path}")
+        mode = "full-bbox" if has_full else "z-only"
+        for row in r:
+            name = row["subsystem"]
+            entry = {
+                "z0": float(row["zmin_cm"]),
+                "z1": float(row["zmax_cm"]),
+            }
+            if has_full:
+                entry.update({
+                    "x0": float(row["xmin_cm"]),
+                    "x1": float(row["xmax_cm"]),
+                    "y0": float(row["ymin_cm"]),
+                    "y1": float(row["ymax_cm"]),
+                })
+            boxes[name] = entry
+    return boxes, mode
+
+def filter_detector_boxes(boxes, include=None, exclude=None):
+    filtered = {}
+    for name, b in boxes.items():
+        if exclude and re.search(exclude, name):
+            continue
+        if include and not re.search(include, name):
+            continue
+        filtered[name] = b
+    return filtered
+
+def draw_detector_boxes(ax_zx, ax_zy, ax_xy, boxes, include=None, exclude=None,
+                        labels=False, zorder=4, mode="full-bbox"):
+    """
+    Draws rectangles for each subsystem box.
+    include/exclude are regex strings on subsystem names.
+    """
+    if mode == "z-only":
+        zlabel_idx = 0
+        for name, b in boxes.items():
+            if exclude and re.search(exclude, name):
+                continue
+            if include and not re.search(include, name):
+                continue
+            z0, z1 = b["z0"], b["z1"]
+            ax_zx.axvspan(z0, z1, alpha=0.08, color="#444444", zorder=zorder)
+            ax_zy.axvspan(z0, z1, alpha=0.08, color="#444444", zorder=zorder)
+            if labels:
+                offset = 10 * (zlabel_idx % 5)
+                ax_zx.text(0.5*(z0+z1), ax_zx.get_ylim()[1] + offset, name, fontsize=7,
+                           rotation=90, va="bottom", ha="center")
+                zlabel_idx += 1
+        return
+
+    label_idx = 0
+    for name, b in boxes.items():
+        if exclude and re.search(exclude, name):
+            continue
+        if include and not re.search(include, name):
+            continue
+
+        z0, z1 = b["z0"], b["z1"]
+        x0, x1 = b["x0"], b["x1"]
+        y0, y1 = b["y0"], b["y1"]
+
+        ax_zx.add_patch(Rectangle((z0, x0), z1-z0, x1-x0, fill=False, linewidth=1.6, alpha=0.55, zorder=zorder))
+        ax_zy.add_patch(Rectangle((z0, y0), z1-z0, y1-y0, fill=False, linewidth=1.6, alpha=0.55, zorder=zorder))
+        ax_xy.add_patch(Rectangle((x0, y0), x1-x0, y1-y0, fill=False, linewidth=1.6, alpha=0.55, zorder=zorder))
+
+        if labels:
+            offset = 10 * (label_idx % 5)
+            ax_zx.text(0.5*(z0+z1), x1 + offset, name, fontsize=7, rotation=90, va="bottom", ha="center")
+            label_idx += 1
+
+
 # ---------------- style & geometry (borrowed from surviving_xyzplots.py) ----------------
 def beamline_segments(zmin, zmax, zstep, x0, y0):
     """Return list of (volname, z_start, z_end) along beamline."""
@@ -95,13 +198,16 @@ def build_beamline_overlays(segs, include_re, exclude_re, min_dz, hw_step, hw_ma
         overlays.append((name, z0, z1, xw, yw))
     return overlays
 
-def draw_beamline_overlays(ax_zx, ax_zy, overlays, labels=False):
+def draw_beamline_overlays(ax_zx, ax_zy, overlays, labels=False, zorder=3):
     """Draw rectangles for each overlay segment in x–z and y–z."""
+    label_idx = 0
     for name, z0, z1, xw, yw in overlays:
-        ax_zx.add_patch(Rectangle((z0, -xw), z1-z0, 2*xw, fill=False, linewidth=1, alpha=0.7))
-        ax_zy.add_patch(Rectangle((z0, -yw), z1-z0, 2*yw, fill=False, linewidth=1, alpha=0.7))
+        ax_zx.add_patch(Rectangle((z0, -xw), z1-z0, 2*xw, fill=False, linewidth=1, alpha=0.7, zorder=zorder))
+        ax_zy.add_patch(Rectangle((z0, -yw), z1-z0, 2*yw, fill=False, linewidth=1, alpha=0.7, zorder=zorder))
         if labels:
-            ax_zx.text(0.5*(z0+z1), xw, name, fontsize=7, rotation=90, va="bottom", ha="center")
+            offset = 10 * (label_idx % 5)
+            ax_zx.text(0.5*(z0+z1), xw + offset, name, fontsize=7, rotation=90, va="bottom", ha="center")
+            label_idx += 1
 
 
 def load_style():
@@ -115,28 +221,32 @@ def load_style():
 def safe_filename(s: str) -> str:
     return re.sub(r'[^A-Za-z0-9_.-]+', '_', s)
 
-def add_geometry_fixed(ax_zx, ax_zy, ax_xy, show_detectors=True):
+def add_geometry_fixed(
+    ax_zx, ax_zy, ax_xy,
+    show_detectors=True, show_dv=True, zorder=2,
+    dv_edgecolor="#6baed6", dv_facecolor="#e6f2fa", dv_alpha=0.25):
     """Hardcoded DV & detector overlay exactly like surviving_xyzplots.py."""
     z_start, z_end = -2500, 2500
+    if show_dv:
 
-    # x vs z (top view)
-    ax_zx.add_patch(Polygon([(z_start,-74),(z_start,74),(z_end,224),(z_end,-224)],
-                            fill=True, linewidth=2, linestyle='-',
-                            edgecolor='#6baed6', facecolor='#e6f2fa'))
-    # y vs z (side view)
-    ax_zy.add_patch(Polygon([(z_start,-159),(z_start,159),(z_end,324),(z_end,-324)],
-                            fill=True, linewidth=2, linestyle='-',
-                            edgecolor='#6baed6', facecolor='#e6f2fa'))
+        # x vs z (top view)
+        ax_zx.add_patch(Polygon([(z_start,-74),(z_start,74),(z_end,224),(z_end,-224)],
+                                fill=True, linewidth=2, linestyle='-',
+                                edgecolor=dv_edgecolor, facecolor=dv_facecolor, alpha=dv_alpha, zorder=zorder))
+        # y vs z (side view)
+        ax_zy.add_patch(Polygon([(z_start,-159),(z_start,159),(z_end,324),(z_end,-324)],
+                                fill=True, linewidth=2, linestyle='-',
+                                edgecolor=dv_edgecolor, facecolor=dv_facecolor, alpha=dv_alpha, zorder=zorder))
 
-    # x vs y (back view): mirrored trapezoids + connectors
-    back  = [(-74,-159),(-74,159),(-224,324),(-224,-324)]
-    backR = [(-x,y) for x,y in back]
-    ax_xy.add_patch(Polygon(back,  fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa'))
-    ax_xy.add_patch(Polygon(backR, fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa'))
-    ax_xy.add_patch(Polygon([(-74,159),(74,159),(224,324),(-224,324)],
-                            fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa'))
-    ax_xy.add_patch(Polygon([(-74,-159),(74,-159),(224,-324),(-224,-324)],
-                            fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa'))
+        # x vs y (back view): mirrored trapezoids + connectors
+        back  = [(-74,-159),(-74,159),(-224,324),(-224,-324)]
+        backR = [(-x,y) for x,y in back]
+        ax_xy.add_patch(Polygon(back,  fill=True, linewidth=2, edgecolor=dv_edgecolor, facecolor=dv_facecolor, alpha=dv_alpha, zorder=zorder))
+        ax_xy.add_patch(Polygon(backR, fill=True, linewidth=2, edgecolor=dv_edgecolor, facecolor=dv_facecolor, alpha=dv_alpha, zorder=zorder))
+        ax_xy.add_patch(Polygon([(-74,159),(74,159),(224,324),(-224,324)],
+                                fill=True, linewidth=2, edgecolor=dv_edgecolor, facecolor=dv_facecolor, alpha=dv_alpha, zorder=zorder))
+        ax_xy.add_patch(Polygon([(-74,-159),(74,-159),(224,-324),(-224,-324)],
+                                fill=True, linewidth=2, edgecolor=dv_edgecolor, facecolor=dv_facecolor, alpha=dv_alpha, zorder=zorder))
 
     if not show_detectors:
         return
@@ -153,9 +263,9 @@ def add_geometry_fixed(ax_zx, ax_zy, ax_xy, show_detectors=True):
               'Tr3_3':'#e6550d','Tr4_4':'#e6550d','Timing Detector_1':'#31a354'}
     for n,(z0,z1,x0,x1,y0,y1) in detectors.items():
         ax_zx.add_patch(Rectangle((z0,x0), z1-z0, x1-x0, fill=False,
-                                  edgecolor=colors.get(n,'black'), linewidth=2, alpha=0.4))
+                                  edgecolor=colors.get(n,'black'), linewidth=2, alpha=0.4, zorder=zorder+1))
         ax_zy.add_patch(Rectangle((z0,y0), z1-z0, y1-y0, fill=False,
-                                  edgecolor=colors.get(n,'black'), linewidth=2, alpha=0.4))
+                                  edgecolor=colors.get(n,'black'), linewidth=2, alpha=0.4, zorder=zorder+1))
 
 def find_z_range_for_prefix(prefix: str, zmin: float, zmax: float, zstep: float, x0: float, y0: float):
     """Scan along z at fixed (x0,y0), find first/last z where volume startswith(prefix)."""
@@ -194,7 +304,11 @@ def find_halfwidth(prefix: str, z: float, axis: str, step: float = 1.0, maxw: fl
         return None
     return w - step
 
-def add_geometry_auto(ax_zx, ax_zy, ax_xy, dv_prefix: str, z_first: float, z_last: float, show_detectors=True):
+def add_geometry_auto(
+    ax_zx, ax_zy, ax_xy,
+    dv_prefix: str, z_first: float, z_last: float,
+    show_detectors=True, zorder=2,
+    dv_edgecolor="#6baed6", dv_facecolor="#e6f2fa", dv_alpha=0.25):
     """
     Draw DV trapezoids from geometry by estimating half-widths at z_first and z_last.
     Falls back to fixed overlay if auto fails.
@@ -206,31 +320,34 @@ def add_geometry_auto(ax_zx, ax_zy, ax_xy, dv_prefix: str, z_first: float, z_las
     y1 = find_halfwidth(dv_prefix, z_last,  "y")
 
     if any(v is None for v in (x0,x1,y0,y1)):
-        add_geometry_fixed(ax_zx, ax_zy, ax_xy, show_detectors=show_detectors)
+        add_geometry_fixed(
+        ax_zx, ax_zy, ax_xy,
+        show_detectors=show_detectors, zorder=zorder,
+        dv_edgecolor=dv_edgecolor, dv_facecolor=dv_facecolor, dv_alpha=dv_alpha)
         return False, None
 
     # x vs z
     ax_zx.add_patch(Polygon([(z_first,-x0),(z_first,x0),(z_last,x1),(z_last,-x1)],
                             fill=True, linewidth=2, linestyle='-',
-                            edgecolor='#6baed6', facecolor='#e6f2fa'))
+                            edgecolor='#6baed6', facecolor='#e6f2fa', alpha=0.25, zorder=zorder))
     # y vs z
     ax_zy.add_patch(Polygon([(z_first,-y0),(z_first,y0),(z_last,y1),(z_last,-y1)],
                             fill=True, linewidth=2, linestyle='-',
-                            edgecolor='#6baed6', facecolor='#e6f2fa'))
+                            edgecolor='#6baed6', facecolor='#e6f2fa', alpha=0.25, zorder=zorder))
 
     # x vs y back view
     back  = [(-x0,-y0),(-x0,y0),(-x1,y1),(-x1,-y1)]
     backR = [( x0,-y0),( x0,y0),( x1,y1),( x1,-y1)]
-    ax_xy.add_patch(Polygon(back,  fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa'))
-    ax_xy.add_patch(Polygon(backR, fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa'))
+    ax_xy.add_patch(Polygon(back,  fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa', alpha=0.25, zorder=zorder))
+    ax_xy.add_patch(Polygon(backR, fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa', alpha=0.25, zorder=zorder))
     ax_xy.add_patch(Polygon([(-x0,y0),(x0,y0),(x1,y1),(-x1,y1)],
-                            fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa'))
+                            fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa', alpha=0.25, zorder=zorder))
     ax_xy.add_patch(Polygon([(-x0,-y0),(x0,-y0),(x1,-y1),(-x1,-y1)],
-                            fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa'))
+                            fill=True, linewidth=2, edgecolor='#6baed6', facecolor='#e6f2fa', alpha=0.25, zorder=zorder))
 
     if show_detectors:
-        # keep detector rectangles identical to surviving_xyzplots.py
-        add_geometry_fixed(ax_zx, ax_zy, ax_xy, show_detectors=True)
+        add_geometry_fixed(ax_zx, ax_zy, ax_xy, show_detectors=True, show_dv=False, zorder=zorder)
+
 
     return True, {"x0":x0,"x1":x1,"y0":y0,"y1":y1}
 
@@ -251,6 +368,40 @@ def pick_first(patterns, base_dir):
             return hits[0]
     return None
 
+def find_detector_boxes_csv(search_dirs):
+    patterns = ["subsystem_boxes.csv", "subsystem_boxes*.csv"]
+    for d in search_dirs:
+        for pat in patterns:
+            hits = sorted(Path(d).glob(pat))
+            if hits:
+                return hits[0]
+    return None
+
+def expand_limits(lo, hi, frac=0.08):
+    if lo is None or hi is None:
+        return None, None
+    span = hi - lo
+    if span <= 0:
+        span = abs(hi) if hi != 0 else 1.0
+    pad = span * frac
+    return lo - pad, hi + pad
+
+def limits_from_boxes(boxes):
+    if not boxes:
+        return None
+    z0 = min(b["z0"] for b in boxes.values())
+    z1 = max(b["z1"] for b in boxes.values())
+    zlim = expand_limits(z0, z1)
+    if "x0" in next(iter(boxes.values())):
+        x0 = min(b["x0"] for b in boxes.values())
+        x1 = max(b["x1"] for b in boxes.values())
+        y0 = min(b["y0"] for b in boxes.values())
+        y1 = max(b["y1"] for b in boxes.values())
+        xlim = expand_limits(x0, x1)
+        ylim = expand_limits(y0, y1)
+        return {"zlim": zlim, "xlim": xlim, "ylim": ylim}
+    return {"zlim": zlim}
+
 def load_geom(geofile):
     fg = ROOT.TFile.Open(geofile, "READ")
     if not fg or fg.IsZombie():
@@ -263,12 +414,17 @@ def load_geom(geofile):
 # ---------------- plotting helpers ----------------
 def plot_points(points, outpath, title, dv_info, axes_cfg, show_detectors,
                 mark_z=None, plot_mode="auto",
-                beam_overlays=None, overlay_labels=False):
+                beam_overlays=None, overlay_labels=False, detector_boxes=None, detector_boxes_cfg=None,
+                label_mode="panel", panel_info=None, hexbin_cfg=None,
+                point_color=None, point_alpha=0.15, point_size=4.0):
+
     """
     points: dict with keys 'zx','zy','xy' each as [Xlist,Ylist]
             where zx=[Z,X], zy=[Z,Y], xy=[X,Y]
     """
     load_style()
+    if hexbin_cfg is None:
+        hexbin_cfg = {"gridsize": 100, "mincnt": 1, "bins": "log"}
 
     fig = plt.figure(figsize=(15,7), constrained_layout=True)
     gs  = gridspec.GridSpec(2,8, figure=fig)
@@ -288,35 +444,101 @@ def plot_points(points, outpath, title, dv_info, axes_cfg, show_detectors,
     ax_xy.set_xlim(axes_cfg["xylim_x"][0], axes_cfg["xylim_x"][1])
     ax_xy.set_ylim(axes_cfg["xylim_y"][0], axes_cfg["xylim_y"][1])
 
-    # Geometry overlay
-    if dv_info["mode"] == "auto" and dv_info.get("z_first") is not None and dv_info.get("z_last") is not None:
-        ok, hw = add_geometry_auto(ax_zx, ax_zy, ax_xy, dv_info["prefix"], dv_info["z_first"], dv_info["z_last"], show_detectors=show_detectors)
-        if not ok:
-            # fallback already drawn inside
-            pass
-    else:
-        add_geometry_fixed(ax_zx, ax_zy, ax_xy, show_detectors=show_detectors)
-                    
-    # Mark vertical z lines if requested (DV entrance etc.)
-    if mark_z:
-        for zline in mark_z:
-            ax_zx.axvline(zline, linewidth=1)
-            ax_zy.axvline(zline, linewidth=1)
-
     # Decide plot mode
     def draw(ax, X, Y):
         n = len(X)
         if n == 0:
             return
-        if plot_mode == "scatter" or (plot_mode == "auto" and n <= 50000):
-            ax.scatter(X, Y, s=4, alpha=0.15)
-        else:
-            # fast & readable for large n
-            ax.hexbin(X, Y, gridsize=220, bins='log', mincnt=1)
+        if plot_mode == "hexbin":
+            ax.hexbin(
+                X, Y,
+                gridsize=hexbin_cfg["gridsize"],
+                bins=hexbin_cfg["bins"],
+                mincnt=hexbin_cfg["mincnt"],
+                zorder=1,
+            )
+        elif plot_mode == "scatter":
+            ax.scatter(X, Y, s=point_size, alpha=point_alpha,
+                    color=point_color if point_color else None,
+                    zorder=1)
+        else:  # auto
+            if n <= 50000:
+                ax.scatter(X, Y, s=4, alpha=0.15, zorder=1)
+            else:
+                ax.hexbin(
+                    X, Y,
+                    gridsize=hexbin_cfg["gridsize"],
+                    bins=hexbin_cfg["bins"],
+                    mincnt=hexbin_cfg["mincnt"],
+                    zorder=1,
+                )
+
 
     draw(ax_zx, points["zx"][0], points["zx"][1])
     draw(ax_zy, points["zy"][0], points["zy"][1])
     draw(ax_xy, points["xy"][0], points["xy"][1])
+
+    # Geometry overlay
+    if dv_info["mode"] == "auto" and dv_info.get("z_first") is not None and dv_info.get("z_last") is not None:
+        if dv_info["mode"] == "auto" and dv_info.get("z_first") is not None and dv_info.get("z_last") is not None:
+            ok, hw = add_geometry_auto(
+                ax_zx, ax_zy, ax_xy,
+                dv_info["prefix"], dv_info["z_first"], dv_info["z_last"],
+                show_detectors=show_detectors, zorder=2,
+                dv_edgecolor=dv_info.get("edgecolor", "#6baed6"),
+                dv_facecolor=dv_info.get("facecolor", "#e6f2fa"),
+                dv_alpha=dv_info.get("alpha", 0.25),
+            )
+            if not ok:
+                pass
+        else:
+            add_geometry_fixed(
+                ax_zx, ax_zy, ax_xy,
+                show_detectors=show_detectors, zorder=2,
+                dv_edgecolor=dv_info.get("edgecolor", "#6baed6"),
+                dv_facecolor=dv_info.get("facecolor", "#e6f2fa"),
+                dv_alpha=dv_info.get("alpha", 0.25),
+            )
+
+
+    # optional beamline overlays
+    if beam_overlays:
+        draw_beamline_overlays(ax_zx, ax_zy, beam_overlays, labels=overlay_labels, zorder=3)
+
+    # optional detector subsystem boxes
+    if detector_boxes:
+        inc = detector_boxes_cfg.get("include") if detector_boxes_cfg else None
+        exc = detector_boxes_cfg.get("exclude") if detector_boxes_cfg else None
+        lab = detector_boxes_cfg.get("labels") if detector_boxes_cfg else False
+        mode = detector_boxes_cfg.get("mode") if detector_boxes_cfg else "full-bbox"
+        draw_detector_boxes(ax_zx, ax_zy, ax_xy, detector_boxes, include=inc, exclude=exc,
+                            labels=lab, zorder=4, mode=mode)
+
+    # Mark vertical z lines if requested (DV entrance etc.)
+    zline_handles = []
+    if mark_z:
+        for zline, label in mark_z:
+            ax_zx.axvline(zline, linewidth=1, linestyle="--", color="#444444", zorder=6)
+            ax_zy.axvline(zline, linewidth=1, linestyle="--", color="#444444", zorder=6)
+            zline_handles.append(Line2D([0], [0], color="#444444", linestyle="--", linewidth=1, label=label))
+
+    if label_mode == "panel":
+        ax_panel = fig.add_subplot(gs[:,7])
+        ax_panel.set_axis_off()
+        handles = []
+        if show_detectors or dv_info.get("mode"):
+            handles.append(Patch(facecolor="#e6f2fa", edgecolor="#6baed6", alpha=0.25, label="DV polygon"))
+        if detector_boxes:
+            handles.append(Line2D([0], [0], color="black", linewidth=1.6, label="Detector boxes"))
+        if beam_overlays:
+            handles.append(Line2D([0], [0], color="black", linewidth=1.0, linestyle="-", alpha=0.7, label="Beamline overlays"))
+        handles.extend(zline_handles)
+        if handles:
+            ax_panel.legend(handles=handles, loc="upper left", frameon=False, fontsize=9)
+        if panel_info:
+            ax_panel.text(0.02, 0.55, panel_info, ha="left", va="top", fontsize=9)
+    elif zline_handles:
+        ax_zx.legend(handles=zline_handles, loc="upper right", frameon=False, fontsize=9)
 
     fig.suptitle(title, fontsize=14)
     fig.savefig(outpath, dpi=250, bbox_inches='tight', pad_inches=0.4)
@@ -325,6 +547,25 @@ def plot_points(points, outpath, title, dv_info, axes_cfg, show_detectors,
 # ---------------- main ----------------
 def main():
     ap = ArgumentParser(description=__doc__)
+
+    ap.add_argument("--detector-boxes-csv", default=None,
+                help="CSV with subsystem,zmin_cm,zmax_cm (+ optional xmin/xmax/ymin/ymax for full bbox).")
+
+    ap.add_argument("--point-color", default=None, help="Scatter point color (e.g. 'tab:orange' or '#ff8800').")
+    ap.add_argument("--point-alpha", type=float, default=0.15, help="Scatter alpha.")
+    ap.add_argument("--point-size", type=float, default=4.0, help="Scatter marker size.")
+
+    ap.add_argument("--dv-edgecolor", default="#6baed6", help="DV polygon edge color.")
+    ap.add_argument("--dv-facecolor", default="#e6f2fa", help="DV polygon fill color.")
+    ap.add_argument("--dv-alpha", type=float, default=0.25, help="DV polygon alpha.")
+
+    ap.add_argument(
+    "--detector-boxes-include",
+    default=r"^(TargetArea|UpstreamTagger|DecayGas|SBT|Tracker\d*|SpectrometerMagnet|TimingDetector|ECal|HCal|MuonDetector|MuonShield)$"
+    )
+    ap.add_argument("--detector-boxes-exclude", default=None)
+    ap.add_argument("--detector-boxes-labels", action="store_true", default=False)
+
     ap.add_argument("--overlay-beamline", action="store_true", default=False,
                 help="Overlay volumes intersecting the beamline (x=beam_x,y=beam_y) from geofile.")
     ap.add_argument("--overlay-zmin", type=float, default=-6000.0)
@@ -339,7 +580,13 @@ def main():
     ap.add_argument("--overlay-hw-max", type=float, default=1200.0)
     ap.add_argument("--overlay-labels", action="store_true", default=False)
 
-    ap.add_argument("--inputdir", required=True, help="Directory containing job_* (or a single job directory).")
+    ap.add_argument(
+        "--inputdir",
+        required=True,
+        nargs="+",
+        help="One or more directories containing job_* (or a single job directory). "
+            "Example: --inputdir /path/prodA /path/prodB"
+    )
     ap.add_argument("--outputdir", required=True, help="Output directory for plots.")
     ap.add_argument("--jobs", default="job_*", help="Job glob under inputdir (default: job_*)")
     ap.add_argument("--max-jobs", type=int, default=None)
@@ -352,6 +599,8 @@ def main():
     ap.add_argument("--zscan-step", type=float, default=  10.0)
     ap.add_argument("--beam-x", type=float, default=0.0)
     ap.add_argument("--beam-y", type=float, default=0.0)
+    ap.add_argument("--dv-z-first", type=float, default=None)
+    ap.add_argument("--dv-z-last",  type=float, default=None)
 
     ap.add_argument("--he-thr", type=float, default=3e-4, help="rho < he_thr => He-like")
     ap.add_argument("--air-thr", type=float, default=3e-3, help="he_thr <= rho < air_thr => air-like")
@@ -369,21 +618,30 @@ def main():
 
     ap.add_argument("--plot-mode", choices=["auto","scatter","hexbin"], default="auto",
                     help="auto chooses scatter for small N, hexbin for large N.")
+    ap.add_argument("--hexbin-gridsize", type=int, default=100)
+    ap.add_argument("--hexbin-mincnt", type=int, default=1)
+    ap.add_argument("--hexbin-bins", choices=["log","linear"], default="log")
+    ap.add_argument("--label-mode", choices=["none","panel","plot"], default="panel",
+                    help="Label mode: none, panel (info panel), or plot (staggered text labels).")
+    ap.add_argument("--mark-dv-zlines", action="store_true", default=False,
+                    help="Mark DV entrance/exit z as dashed lines.")
+    ap.add_argument("--auto-limits", action=BooleanOptionalAction, default=True,
+                    help="Auto-compute axis limits from detector boxes when no explicit limits are set.")
     ap.add_argument("--write-summary", action="store_true", default=True)
     ap.add_argument("--dump-z-transitions", action="store_true", default=False,
                     help="Scan along z at (beam_x,beam_y) and print volume transitions (helps locate muon-shield end / gap).")
 
     # axis limits (same defaults as surviving_xyzplots)
-    ap.add_argument("--zlim", nargs=2, type=float, default=[-3000, 3800])
-    ap.add_argument("--xlim", nargs=2, type=float, default=[-600, 600])
-    ap.add_argument("--ylim", nargs=2, type=float, default=[-600, 600])
-    ap.add_argument("--xylim-x", nargs=2, type=float, default=[-250, 250])
-    ap.add_argument("--xylim-y", nargs=2, type=float, default=[-400, 400])
+    ap.add_argument("--zlim", nargs=2, type=float, default=None)
+    ap.add_argument("--xlim", nargs=2, type=float, default=None)
+    ap.add_argument("--ylim", nargs=2, type=float, default=None)
+    ap.add_argument("--xylim-x", nargs=2, type=float, default=None)
+    ap.add_argument("--xylim-y", nargs=2, type=float, default=None)
 
     args = ap.parse_args()
     random.seed(args.seed)
 
-    in_dir = Path(args.inputdir).resolve()
+    in_dirs = [Path(p).resolve() for p in args.inputdir]
     out_dir = Path(args.outputdir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -398,24 +656,37 @@ def main():
         if s.startswith("region:"):
             sel_region = s.split(":",1)[1]
 
-    # job dirs
-    if list(in_dir.glob("*_rec.root")):
-        job_dirs = [in_dir]
-    else:
-        job_dirs = sorted([p for p in in_dir.glob(args.jobs) if p.is_dir()])
+    def collect_job_dirs(base: Path, jobs_glob: str):
+        # "single job directory" if it directly contains *_rec.root
+        if list(base.glob("*_rec.root")):
+            return [base]
+        return sorted([p for p in base.glob(jobs_glob) if p.is_dir()])
+
+    job_dirs = []
+    seen = set()
+    for base in in_dirs:
+        if not base.exists():
+            print(f"! skip inputdir (does not exist): {base}")
+            continue
+        for jd in collect_job_dirs(base, args.jobs):
+            if jd not in seen:
+                job_dirs.append(jd)
+                seen.add(jd)
 
     if args.max_jobs is not None:
         job_dirs = job_dirs[:max(0, args.max_jobs)]
 
     if not job_dirs:
-        raise RuntimeError(f"No job dirs found in {in_dir} with pattern {args.jobs}")
+        raise RuntimeError(f"No job dirs found in any inputdir {in_dirs} with pattern {args.jobs}")
 
     # global containers (merged across jobs)
     pts = {"zx":[[],[]], "zy":[[],[]], "xy":[[],[]]}
     counters = Counter()
     region_counts = Counter()
-    dv_info_global = {"prefix": args.dv_prefix, "z_first": None, "z_last": None, "mode": args.geometry}
-
+    dv_info_global = {
+        "prefix": args.dv_prefix, "z_first": None, "z_last": None, "mode": args.geometry,
+        "edgecolor": args.dv_edgecolor, "facecolor": args.dv_facecolor, "alpha": args.dv_alpha
+    }
     for jd in job_dirs:
         # discover files
         rec = pick_first(["*_rec.root","ship.*_rec.root","ship.conical*_rec.root"], str(jd))
@@ -446,7 +717,14 @@ def main():
                 hw_max=args.overlay_hw_max,
             )
         # determine DV z-range by scanning
-        z_first, z_last = find_z_range_for_prefix(args.dv_prefix, args.zscan_min, args.zscan_max, args.zscan_step, args.beam_x, args.beam_y)
+        if args.dv_z_first is not None and args.dv_z_last is not None:
+            z_first, z_last = args.dv_z_first, args.dv_z_last
+        elif args.geometry == "fixed":
+            z_first, z_last = -2500.0, 2500.0
+        else:
+            z_first, z_last = find_z_range_for_prefix(args.dv_prefix, args.zscan_min, args.zscan_max,
+                                                    args.zscan_step, args.beam_x, args.beam_y)
+
         if dv_info_global["z_first"] is None:
             dv_info_global["z_first"] = z_first
             dv_info_global["z_last"]  = z_last
@@ -473,6 +751,9 @@ def main():
 
         for i in range(n_scan):
             tree.GetEntry(i)
+            if not hasattr(tree, "MCTrack") or tree.MCTrack.GetEntries() < 1:
+                continue
+
             tree.MCTrack[0].GetStartVertex(v)
             x, y, z = float(v.X()), float(v.Y()), float(v.Z())
 
@@ -539,6 +820,41 @@ def main():
             "xy":[filt(pts["xy"][0]), filt(pts["xy"][1])],
         }
 
+    label_mode = args.label_mode
+    if ("--label-mode" not in sys.argv) and (args.detector_boxes_labels or args.overlay_labels):
+        label_mode = "plot"
+
+    detector_boxes = None
+    detector_boxes_mode = None
+    detector_boxes_path = args.detector_boxes_csv
+    if detector_boxes_path:
+        if not Path(detector_boxes_path).exists():
+            raise RuntimeError(f"Detector boxes CSV not found: {detector_boxes_path}")
+    else:
+        auto_csv = find_detector_boxes_csv([Path.cwd(), *in_dirs, out_dir])
+        if auto_csv:
+            detector_boxes_path = str(auto_csv)
+            print(f"Auto-loaded detector boxes from: {detector_boxes_path}")
+
+    if detector_boxes_path:
+        detector_boxes, detector_boxes_mode = load_subsystem_boxes_csv(detector_boxes_path)
+        print(f"Detector boxes CSV mode: {detector_boxes_mode}")
+        if detector_boxes_mode == "z-only":
+            print("! Warning: z-only detector boxes CSV loaded; XY boxes are not available.")
+        detector_boxes = filter_detector_boxes(detector_boxes, args.detector_boxes_include, args.detector_boxes_exclude)
+        if not detector_boxes:
+            print("! Warning: detector boxes CSV loaded but no boxes matched include/exclude filters.")
+    else:
+        print("! Warning: no detector boxes CSV found. Target/MuonShield boxes will not be drawn. "
+              "Pass --detector-boxes-csv to enable.")
+
+    detector_boxes_cfg = {
+        "include": None,
+        "exclude": None,
+        "labels": (label_mode == "plot"),
+        "mode": detector_boxes_mode or "full-bbox",
+    }
+
     # Build title + output name
     title = f"Truth vertices | density={sel_density} region={sel_region}"
     if args.z_window is not None:
@@ -550,31 +866,98 @@ def main():
     outname = safe_filename(outname) + ".png"
     outpath = out_dir / outname
 
+    explicit_limits = any(
+        v is not None for v in (args.zlim, args.xlim, args.ylim, args.xylim_x, args.xylim_y)
+    )
+    auto_limits = args.auto_limits and not explicit_limits
+    limits_from_boxes_cfg = limits_from_boxes(detector_boxes) if auto_limits else None
+    if auto_limits and limits_from_boxes_cfg:
+        zlim = list(limits_from_boxes_cfg["zlim"])
+        if "xlim" in limits_from_boxes_cfg:
+            xlim = list(limits_from_boxes_cfg["xlim"])
+            ylim = list(limits_from_boxes_cfg["ylim"])
+            xylim_x = list(limits_from_boxes_cfg["xlim"])
+            xylim_y = list(limits_from_boxes_cfg["ylim"])
+        else:
+            xlim = args.xlim if args.xlim is not None else DEFAULT_LIMITS["xlim"]
+            ylim = args.ylim if args.ylim is not None else DEFAULT_LIMITS["ylim"]
+            xylim_x = args.xylim_x if args.xylim_x is not None else DEFAULT_LIMITS["xylim_x"]
+            xylim_y = args.xylim_y if args.xylim_y is not None else DEFAULT_LIMITS["xylim_y"]
+    else:
+        if auto_limits and not detector_boxes:
+            print("! Warning: auto-limits requested but no detector boxes available. Using default limits.")
+        zlim = args.zlim if args.zlim is not None else DEFAULT_LIMITS["zlim"]
+        xlim = args.xlim if args.xlim is not None else DEFAULT_LIMITS["xlim"]
+        ylim = args.ylim if args.ylim is not None else DEFAULT_LIMITS["ylim"]
+        xylim_x = args.xylim_x if args.xylim_x is not None else DEFAULT_LIMITS["xylim_x"]
+        xylim_y = args.xylim_y if args.xylim_y is not None else DEFAULT_LIMITS["xylim_y"]
+
     axes_cfg = {
-        "zlim": args.zlim,
-        "xlim": args.xlim,
-        "ylim": args.ylim,
-        "xylim_x": args.xylim_x,
-        "xylim_y": args.xylim_y,
+        "zlim": zlim,
+        "xlim": xlim,
+        "ylim": ylim,
+        "xylim_x": xylim_x,
+        "xylim_y": xylim_y,
     }
 
     mark_z = []
-    if dv_info_global.get("z_first") is not None:
-        mark_z.append(dv_info_global["z_first"])
-    if dv_info_global.get("z_last") is not None:
-        mark_z.append(dv_info_global["z_last"])
+    if args.mark_dv_zlines:
+        if dv_info_global.get("z_first") is not None:
+            mark_z.append((dv_info_global["z_first"], "DV entrance"))
+        if dv_info_global.get("z_last") is not None:
+            mark_z.append((dv_info_global["z_last"], "DV exit"))
 
-    plot_mode = args.plot_mode
-    if plot_mode == "hexbin":
-        plot_mode = "hexbin"  # mapped in draw() via else branch
+    overlay_labels = (label_mode == "plot")
+    hexbin_cfg = {"gridsize": args.hexbin_gridsize, "mincnt": args.hexbin_mincnt, "bins": args.hexbin_bins}
+
+    panel_lines = []
+    if label_mode == "panel":
+        panel_lines.append("Subsystem boxes:")
+        if detector_boxes:
+            for name in sorted(detector_boxes.keys()):
+                panel_lines.append(f"- {name}")
+        else:
+            panel_lines.append("- (none)")
+        panel_lines.append("")
+        panel_lines.append(f"z-range: {axes_cfg['zlim'][0]:.0f} .. {axes_cfg['zlim'][1]:.0f} cm")
+        if detector_boxes_mode == "z-only":
+            panel_lines.append("XY boxes not available (z-only CSV)")
+        if mark_z:
+            for zline, label in mark_z:
+                panel_lines.append(f"{label}: z={zline:.0f} cm")
+    panel_info = "\n".join(panel_lines) if panel_lines else None
+
+    overlays_state = [
+        f"DV polygon={args.geometry}",
+        f"detector boxes={'yes' if detector_boxes else 'no'}",
+        f"beamline overlays={'on' if beam_overlays else 'off'}",
+        f"mark dv z-lines={'on' if args.mark_dv_zlines else 'off'}",
+        f"label mode={label_mode}",
+        f"auto limits={'on' if auto_limits else 'off'}",
+    ]
+    print("Overlays: " + ", ".join(overlays_state))
+    print(f"Axis limits: z={axes_cfg['zlim']}, x={axes_cfg['xlim']}, y={axes_cfg['ylim']}, "
+          f"x/y={axes_cfg['xylim_x']},{axes_cfg['xylim_y']}")
+
     plot_points(
     pts, str(outpath), title, dv_info_global, axes_cfg,
     show_detectors=args.show_detectors,
     mark_z=mark_z,
-    plot_mode=("scatter" if args.plot_mode=="scatter" else "auto"),
+    plot_mode=args.plot_mode,
     beam_overlays=beam_overlays,
-    overlay_labels=args.overlay_labels
+    overlay_labels=overlay_labels,
+    detector_boxes=detector_boxes,
+    detector_boxes_cfg=detector_boxes_cfg,
+    label_mode=label_mode,
+    panel_info=panel_info,
+    hexbin_cfg=hexbin_cfg,
+    point_color=args.point_color,
+    point_alpha=args.point_alpha,
+    point_size=args.point_size,
     )
+
+
+
 
 
 
@@ -586,8 +969,8 @@ def main():
 
     if args.write_summary:
         summary = {
-            "inputdir": str(in_dir),
-            "jobs_used": [p.name for p in job_dirs],
+            "inputdirs": [str(d) for d in in_dirs],
+            "jobs_used": [str(p) for p in job_dirs],
             "selection": {"density": sel_density, "region": sel_region, "z_window": args.z_window},
             "counters_density": dict(counters),
             "counters_region": dict(region_counts),

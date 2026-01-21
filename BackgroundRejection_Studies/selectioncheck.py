@@ -33,14 +33,25 @@ def dump_summary_csv(job_id,event_stats,pass_stats,out_dir= ".",**meta):
     pd.DataFrame(rows).to_csv(path, index=False)
     print("Output summary saved in", path)
 
-def ip_category(ip_elem):
+def ip_category(ip_elem, ip_material=""):
     """Return which sub-sample the event belongs to."""
-    
+
     if ip_elem.startswith(("LiSc", "VetoInnerWall", "VetoOuterWall","VetoVerticalRib","VetoLongitRib")):
         return "vesselCase"
     if ip_elem.startswith("DecayVacuum"):
         return "heliumCase"
-    
+
+    # Cave-case: interactions in air (in the experimental hall/cave)
+    try:
+        if ip_material and ("air" in str(ip_material).lower()):
+            return "caveCase"
+    except Exception:
+        pass
+
+    # Fallback on volume name only if material information is unavailable.
+    if not ip_material and str(ip_elem).lower().startswith("cave"):
+        return "caveCase"
+
     return "all"       
 
 def fixwidth_tabulate(rows, headers, *, width=50, **kw):
@@ -135,6 +146,13 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("-p", "--path"  ,dest="path"         ,help="Path to simulation file",required=True)
     parser.add_argument("-i","--jobDir"  ,dest="jobDir"      ,help="job name of input file",  type=str,required=True)
+    parser.add_argument(
+        "--case",
+        dest="case",
+        choices=("all", "vesselCase", "heliumCase", "caveCase", "ubtCase"),
+        default="all",
+        help="Interaction point category: global ('all'), SBT ('vesselCase'), decay volume ('heliumCase'), air/cave ('caveCase') or upstream tagger ('ubtCase').",
+    )
     parser.add_argument(     "--test"    ,dest="testing_code",help="Run Test on 100 events of the input file"              ,  action="store_true")
 
     options = parser.parse_args()
@@ -307,7 +325,7 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
         combined_GNN45,   combined_other
     ))
 
-    cats = ("all", "vesselCase", "heliumCase")
+    cats = ("all", "vesselCase", "heliumCase") if options.case == "all" else ("all", options.case)
 
     #--------------------------------------------------------------------------------------------------------------
 
@@ -388,15 +406,44 @@ def main(weight_function,IP_CUT = 250,fixTDC=None,fix_candidatetime=None,fix_nDI
         
         interaction_point = ROOT.TVector3()
         event.MCTrack[0].GetStartVertex(interaction_point)
+        ip_elem = ""
+        ip_material = ""
+        ip_path = ""
         try:
             node  = ROOT.gGeoManager.FindNode(interaction_point.X(),
                                               interaction_point.Y(),
                                               interaction_point.Z())
             ip_elem = node.GetVolume().GetName()
+            try:
+                ip_material = node.GetVolume().GetMedium().GetMaterial().GetName()
+            except Exception:
+                ip_material = ""
+            try:
+                ip_path = ROOT.gGeoManager.GetPath()
+            except Exception:
+                ip_path = ""
         except Exception:
             ip_elem = ""                 # falls back to global-only
+            ip_path = ""
 
-        cat = ip_category(ip_elem)       # "all", "vesselCase", "heliumCase"
+        cat = ip_category(ip_elem, ip_material)       # "all", "vesselCase", "heliumCase", "caveCase", "ubtCase"
+
+        # UBT-case: interactions in the Upstream Background Tagger (Upstream_Tagger)
+        try:
+            _pl = str(ip_path).lower()
+            if ("upstream_tagger" in _pl) or ("upstreamtagger" in _pl):
+                cat = "ubtCase"
+        except Exception:
+            pass
+
+
+        # keep default behaviour unchanged: only activate caveCase when explicitly requested
+        if options.case == "all" and cat == "caveCase":
+            cat = "all"
+        if options.case == "all" and cat == "ubtCase":
+            cat = "all"
+        elif options.case != "all" and cat != options.case:
+            continue
         # -----------------------------------------------------------------
         
         if cat=='heliumCase':

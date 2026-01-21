@@ -110,6 +110,15 @@ p = argparse.ArgumentParser(description=__doc__)
 #p.add_argument("-p", "--path", default="/eos/experiment/ship/user/Iaroslava/train_sample_N2024_big/")
 p.add_argument("-p", "--path", default="/eos/experiment/ship/simulation/bkg/NeutrinoDIS_2024helium/10864335/")
 
+p.add_argument(
+    "--case",
+    dest="case",
+    choices=("all", "vesselCase", "heliumCase", "caveCase", "ubtCase"),
+    default="all",
+    help="Interaction point category: global ('all'), SBT ('vesselCase'), decay volume ('heliumCase'), air/cave ('caveCase') or upstream tagger ('ubtCase').",
+)
+
+
 g = p.add_mutually_exclusive_group(required=True)
 
 g.add_argument("--leptonrho",   dest="channel", action="store_const", const="leptonrho",
@@ -151,5 +160,9 @@ else:
 
 
 sys.argv = [sys.argv[0], *rest, "-p", known.path]# Pass the parsed path plus any remaining args
+
+if getattr(known, "case", "all") != "all":
+    sys.argv += ["--case", known.case]
+
 print("The total number of events in this simulation is set to :", N_gen_input) #debugging, so the N_gen input is visible in the output
 main(IP_CUT=ipcut,weight_function=calcweight_neuDIS,finalstate=finalstate)
