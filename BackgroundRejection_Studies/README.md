@@ -1,3 +1,5 @@
+The following README.md stems from the original analysis scripts. This repository was adapted for a later simulation, which can be found at /eos/experiment/ship/simulation/bkg/NeutrinoDIS_2024helium_noCavern. The results of the analysis are stored in the Merge_Results directory. The main branch of this repositry is identical to the base scripts from https://github.com/anupama-reghunath/FairShip_Analysis/tree/main/BackgroundRejection_Studies. The final version of the scripts that was used here, can be found under the branch "feature/Changes".
+
 # DIS Background Studies using **FairShip**
 
 This repository contains scripts that were used to produce the DIS background studies presented at the [34th SHiP Collaboration meeting](https://indico.cern.ch/event/1578670/contributions/6689107/attachments/3137319/5568518/Status_MuonDIS_nuDIS.pdf). 
